@@ -108,9 +108,19 @@ def _summaries(adata, clustering_column, n_permutations, database_name, level, s
     return database_name, selected, celltypes, labels, results
 
 
-@register_function(aliases=['通信AnnData', 'create_communication_anndata'], category='space',
-                   description='Summarize a selected COMMOT database into plotting AnnData.',
-                   examples=["comm = ov.space.create_communication_anndata(adata, 'cell_type', level='lr')"])
+@register_function(
+    aliases=['通信AnnData', 'create_communication_anndata', 'cellchat格式转换', 'commot汇总', '细胞通信汇总'],
+    category='space',
+    description='Summarize a selected COMMOT database into plotting AnnData.',
+    prerequisites={'optional_functions': []},
+    requires={'obsp': ['commot-*'], 'obs': ['clustering_column']},
+    produces={'layers': ['means', 'pvalues'],
+              'obs': ['sender', 'receiver', 'cell_type_pair'],
+              'var': ['interacting_pair', 'classification']},
+    auto_fix='none',
+    examples=["comm = ov.space.create_communication_anndata(adata, 'cell_type', level='lr')"],
+    related=['space.update_classification_from_database'],
+)
 def create_communication_anndata(adata, clustering_column, n_permutations=100, *,
                                 database_name=None, level='all', statistic='sum', use_gpu=False, seed=0):
     """Return cell-type-pair by interaction AnnData from existing COMMOT results.
@@ -164,8 +174,18 @@ def example_usage():
     print("comm = ov.space.create_communication_anndata(adata, 'cell_type', level='lr')")
 
 
-@register_function(aliases=['更新通信分类', 'update_classification_from_database'], category='space',
-                   description='Update COMMOT annotations using exact database identities.')
+@register_function(
+    aliases=['更新通信分类', 'update_classification_from_database', 'commot_pathway_update',
+             '通信数据库注释', '更新pathway分类'],
+    category='space',
+    description='Update COMMOT annotations using exact database identities.',
+    prerequisites={'optional_functions': ['create_communication_anndata']},
+    requires={'uns': ['commot-*-info']},
+    produces={'var': ['classification', 'gene_a', 'gene_b', 'partner_a', 'partner_b']},
+    auto_fix='none',
+    examples=['comm = ov.space.update_classification_from_database(comm, adata)'],
+    related=['space.create_communication_anndata'],
+)
 def update_classification_from_database(comm_adata, adata_with_db, *, database_name=None):
     """Update known annotations without parsing hyphenated molecular identifiers."""
     saved = comm_adata.uns.get('commot_summary', {}).get('database_name')

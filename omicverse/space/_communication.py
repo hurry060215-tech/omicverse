@@ -147,7 +147,7 @@ def run_flowsig(adata, *, commot_output_key, gem_expr_key='X_gem', block_key,
     Supply GEMs explicitly: this runner does not train or substitute GEM methods.
     All constructed variables are retained (no implicit Moran selection).
     GEM scaling uses the backend's scale_gem_expr=False mode; X/layer provides
-    non-negative ligand expression. Raw, biologically oriented and filtered
+    non-negative ligand expression. Raw, biologically validated and filtered
     adjacency matrices remain in uns[key_added]['network']. Edge weights are
     bootstrap frequencies, not p-values or experimentally established causality.
     Undirected edges use edge_support, counting each bootstrap once.

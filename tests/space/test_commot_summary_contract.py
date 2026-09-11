@@ -81,3 +81,19 @@ def test_summary_works_with_existing_cellchatviz():
     assert set(viz.cell_types) == {'A', 'B'}
     aggregated = viz.compute_aggregated_network(pvalue_threshold=1.0)
     assert aggregated is not None
+
+
+@pytest.mark.parametrize('aliases,function', [
+    (['commot汇总', '细胞通信汇总', 'cellchat格式转换'], create_communication_anndata),
+    (['commot_pathway_update', '通信数据库注释', '更新pathway分类'], update_classification_from_database),
+])
+def test_existing_registry_aliases_and_prerequisites(aliases, function):
+    from inspect import unwrap
+    from omicverse._registry import get_registry
+
+    registry = get_registry()
+    for alias in aliases:
+        assert unwrap(registry.get_function(alias)) is unwrap(function)
+    check = registry.check_prerequisites(function.__name__, ad.AnnData(np.ones((2, 2))))
+    assert not check['satisfied']
+    assert check['missing_structures']
