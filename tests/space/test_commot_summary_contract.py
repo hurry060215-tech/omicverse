@@ -97,3 +97,48 @@ def test_existing_registry_aliases_and_prerequisites(aliases, function):
     check = registry.check_prerequisites(function.__name__, ad.AnnData(np.ones((2, 2))))
     assert not check['satisfied']
     assert check['missing_structures']
+
+
+def test_annotation_update_after_h5ad_roundtrip(tmp_path):
+    a = fixture()
+    db = a.uns['commot-db-one-info']['df_ligrec']
+    db.loc[1] = ['L2', 'R_Y', 'P-Q']
+    a.obsp['commot-db-one-L2-R_Y'] = a.obsp['commot-db-one-L-X-R_Y'].copy()
+    out = create_communication_anndata(a, 'type', 2, database_name='db-one', level='lr')
+    out.var['user_note'] = ['keep-a', 'keep-b']
+    out.write_h5ad(tmp_path / 'summary.h5ad')
+    restored = ad.read_h5ad(tmp_path / 'summary.h5ad')
+    assert isinstance(restored.var['classification'].dtype, pd.CategoricalDtype)
+    db['pathway'] = 'new-pathway'
+    db['secreted'] = 'True'
+    update_classification_from_database(restored, a)
+    assert restored.var['classification'].tolist() == ['new-pathway'] * 2
+    assert restored.var['secreted'].tolist() == ['True'] * 2
+    assert restored.var['user_note'].tolist() == ['keep-a', 'keep-b']
+    restored.write_h5ad(tmp_path / 'updated.h5ad')
+    assert ad.read_h5ad(tmp_path / 'updated.h5ad').var['classification'].tolist() == ['new-pathway'] * 2
+
+
+def test_quick_demo_limits_work_before_summarizing(monkeypatch):
+    from omicverse.space import _commot
+
+    a = fixture()
+    del a.uns['commot-db-two-info']
+    db = a.uns['commot-db-one-info']['df_ligrec']
+    db.loc[1] = ['L2', 'R_Y', 'P-Q']
+    a.obsp['commot-db-one-L2-R_Y'] = a.obsp['commot-db-one-L-X-R_Y'].copy()
+    original_keys = list(a.obsp)
+    summarize = _commot._get_summarize_cluster_gpu()
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return summarize(*args, **kwargs)
+
+    monkeypatch.setattr(_commot, '_get_summarize_cluster_gpu', lambda: counted)
+    out = _commot.quick_demo(a, 'type', max_pathways=1)
+    assert len(calls) == 1
+    assert list(out.var_names) == ['commot-db-one-L-X-R_Y']
+    assert out.X[out.obs_names.get_loc('A|B'), 0] == 6
+    assert list(a.obsp) == original_keys
+    assert len(db) == 2

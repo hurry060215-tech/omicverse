@@ -165,8 +165,16 @@ def process_all_commot(adata, clustering_column, n_permutations=100, return_form
 
 def quick_demo(adata, clustering_column, max_pathways=5):
     """Return a small LR summary; this does not run inference."""
-    result = create_communication_anndata(adata, clustering_column, n_permutations=10, level='lr')
-    return result[:, :max_pathways].copy()
+    if not isinstance(max_pathways, int) or max_pathways < 1:
+        raise ValueError('max_pathways must be a positive integer.')
+    database_name, metadata = _result_metadata(adata)
+    keys = [key for key, entry in metadata.items()
+            if entry['level'] == 'lr' and key in adata.obsp][:max_pathways]
+    info_key = f'commot-{database_name}-info'
+    demo = ad.AnnData(obs=adata.obs.copy(),
+                      obsp={key: adata.obsp[key] for key in keys},
+                      uns={info_key: adata.uns[info_key]})
+    return create_communication_anndata(demo, clustering_column, n_permutations=10, level='lr')
 
 
 def example_usage():
@@ -195,5 +203,8 @@ def update_classification_from_database(comm_adata, adata_with_db, *, database_n
     for key in comm_adata.var_names:
         if key in metadata:
             for field, value in metadata[key].items():
+                if field in comm_adata.var and isinstance(comm_adata.var[field].dtype, pd.CategoricalDtype):
+                    if value not in comm_adata.var[field].cat.categories:
+                        comm_adata.var[field] = comm_adata.var[field].cat.add_categories([value])
                 comm_adata.var.loc[key, field] = value
     return comm_adata
