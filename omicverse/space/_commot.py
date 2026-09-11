@@ -25,6 +25,11 @@ def _result_metadata(adata, database_name=None):
     if database_name not in available:
         raise ValueError(f'Missing commot-{database_name}-info with df_ligrec; preserve backend metadata.')
     db = adata.uns[f'commot-{database_name}-info']['df_ligrec']
+    return _database_metadata(db, database_name)
+
+
+def _database_metadata(db, database_name):
+    """Build identities and reject ambiguous encoded keys before inference."""
     if not {'ligand', 'receptor', 'pathway'}.issubset(db.columns):
         raise ValueError('df_ligrec requires ligand, receptor, pathway columns.')
     prefix = f'commot-{database_name}-'

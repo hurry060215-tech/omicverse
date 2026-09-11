@@ -58,6 +58,7 @@ def run_commot(adata, *, database_name, df_ligrec, dis_thr, distance_unit,
     lower bound on backend memory, not a total memory guarantee.
     inplace=False returns an independent copy. Failures do not write partial
     outputs to the input. Existing output namespace requires overwrite=True.
+    Ambiguous LR/pathway/total result keys are rejected before inference.
     """
     _single_library(adata, library_key)
     expression = _expression(adata, layer)
@@ -91,6 +92,8 @@ def run_commot(adata, *, database_name, df_ligrec, dis_thr, distance_unit,
     database = database.loc[database.ligand.map(present) & database.receptor.map(present)].copy()
     if database.empty:
         raise ValueError('No complete ligand-receptor pair is present in expression genes.')
+    from ._commot import _database_metadata
+    _database_metadata(database, database_name)
     if any(key in kwargs for key in ('copy', 'adata')):
         raise ValueError('Use inplace to control copies; do not pass backend copy/adata.')
     prefix = f'commot-{database_name}-'
@@ -147,6 +150,8 @@ def run_flowsig(adata, *, commot_output_key, gem_expr_key='X_gem', block_key,
     non-negative ligand expression. Raw, biologically oriented and filtered
     adjacency matrices remain in uns[key_added]['network']. Edge weights are
     bootstrap frequencies, not p-values or experimentally established causality.
+    Undirected edges use edge_support, counting each bootstrap once.
+    Ligands must exist in var_names; complex subunits are not aggregated.
     The backend uses bootstrap-index seeds; no unsupported random seed is implied.
     inplace=False returns a copy; backend failure leaves the input unchanged.
     """

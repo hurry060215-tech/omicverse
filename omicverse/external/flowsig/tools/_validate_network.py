@@ -27,7 +27,8 @@ def filter_low_confidence_edges(adata: sc.AnnData,
     edge_threshold
         The relative frequency of bootstrap edge frequency above which we keep edges.
         For directed arcs, we consider single edge frequencies. For undirected edges,
-        we consider total edge weight.
+        we count each bootstrap containing either direction once. Networks lacking
+        edge_support must be regenerated with learn_intercellular_flows.
 
     flowsig_network_key 
         The label in adata.uns where all of the flowsig output is stored, including the learned
@@ -58,26 +59,12 @@ def filter_low_confidence_edges(adata: sc.AnnData,
 
     adjacency_filtered = np.zeros(adjacency.shape)
     
-    # First, let us calculate the total edge weights
-    total_edge_weights = {}
-
-    nonzero_rows, nonzero_cols = adjacency.nonzero()
-
-    for i in range(len(nonzero_rows)):
-
-        row_ind = nonzero_rows[i]
-        col_ind = nonzero_cols[i]
-
-        node_1 = flow_vars[row_ind]
-        node_2 = flow_vars[col_ind]
-
-        edge = (node_1, node_2)            
-
-        # We either haven't recorded the edge, or we've taken the reverse edge previously
-        if (edge[1], edge[0]) in total_edge_weights:
-                total_edge_weights[(edge[1], edge[0])] += adjacency[row_ind, col_ind]
-        else:
-            total_edge_weights[edge] = adjacency[row_ind, col_ind]
+    edge_support = adata.uns[flowsig_network_key]['network'].get('edge_support')
+    if cpdag.edges and edge_support is None:
+        raise ValueError(
+            'Undirected edge filtering requires bootstrap edge_support; '
+            'rerun learn_intercellular_flows to regenerate this network.'
+        )
 
     for arc in cpdag.arcs:
 
@@ -99,16 +86,7 @@ def filter_low_confidence_edges(adata: sc.AnnData,
         node_1 = flow_vars[tuple(edge)[0]]
         node_2 = flow_vars[tuple(edge)[1]]
 
-        # For directed arcs, we simply consider the total edge weights
-        total_edge_weight = 0.0
-
-        if (node_1, node_2) in total_edge_weights:
-
-            total_edge_weight = total_edge_weights[(node_1, node_2)]
-
-        else:
-
-            total_edge_weight = total_edge_weights[(node_2, node_1)]
+        total_edge_weight = edge_support[tuple(edge)[0], tuple(edge)[1]]
 
         # Need to account for both (node1, node2) and (node2, node1) as 
         # adjacency encodes directed network

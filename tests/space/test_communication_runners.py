@@ -88,9 +88,46 @@ def test_real_commot_flowsig_workflow_and_roundtrip(tmp_path):
                          n_bootstraps=2, n_jobs=1, inplace=False)
     assert 'flowsig_network' not in a.uns
     net = result.uns['flowsig_network']['network']
-    for key in ['adjacency', 'adjacency_validated', 'adjacency_validated_filtered']:
+    for key in ['adjacency', 'adjacency_validated', 'adjacency_validated_filtered', 'edge_support']:
         assert np.isfinite(net[key]).all()
         assert net[key].shape == (4, 4)
     result.write_h5ad(tmp_path / 'flow.h5ad')
     restored = ad.read_h5ad(tmp_path / 'flow.h5ad')
     assert restored.uns['flowsig_network']['omicverse_run']['variable_selection'] == 'all'
+    np.testing.assert_array_equal(restored.uns['flowsig_network']['network']['edge_support'], net['edge_support'])
+
+
+@pytest.mark.parametrize('rows', [
+    [('A-B', 'C', 'P'), ('A', 'B-C', 'Q')],
+    [('A', 'B', 'A-B')],
+    [('A', 'B', 'total-total')],
+])
+def test_commot_rejects_colliding_keys_before_inference(monkeypatch, rows):
+    from omicverse.external.commot import tools
+    a = ad.AnnData(np.ones((4, 5)))
+    a.var_names = ['A-B', 'C', 'A', 'B-C', 'B']
+    a.obsm['spatial'] = np.arange(8).reshape(4, 2)
+    def unexpected(*args, **kwargs):
+        pytest.fail('backend must not be called for ambiguous identities')
+    monkeypatch.setattr(tools, 'spatial_communication', unexpected)
+    db = pd.DataFrame(rows, columns=['ligand', 'receptor', 'pathway'])
+    with pytest.raises(ValueError, match='Ambiguous COMMOT result key'):
+        run_commot(a, database_name='test', df_ligrec=db, dis_thr=2,
+                   distance_unit='arbitrary', heteromeric=False)
+    assert not a.uns and not a.obsp
+
+
+def test_real_complex_ligand_is_rejected_without_partial_flow_output():
+    pytest.importorskip('causaldag')
+    rng = np.random.default_rng(18)
+    a = ad.AnnData(rng.poisson(5, (24, 3)).astype(float))
+    a.var_names = ['A', 'B', 'R']
+    a.obs['block'] = np.repeat(['x', 'y', 'z'], 8)
+    a.obsm['spatial'] = np.column_stack([np.arange(24), np.zeros(24)])
+    a.obsm['X_gem'] = rng.uniform(0.1, 2, (24, 2))
+    db = pd.DataFrame([['A_B', 'R', 'P']], columns=['ligand', 'receptor', 'pathway'])
+    run_commot(a, database_name='complex', df_ligrec=db, dis_thr=2, distance_unit='arbitrary')
+    assert a.obsp['commot-complex-A_B-R'].sum() > 0
+    with pytest.raises(ValueError, match='outflow.*A_B'):
+        run_flowsig(a, commot_output_key='commot-complex', block_key='block', n_bootstraps=2)
+    assert 'X_flow' not in a.obsm and 'flowsig_network' not in a.uns

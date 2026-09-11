@@ -386,4 +386,11 @@ def learn_intercellular_flows(
             "adjacency": bagged_adjacency,
         }
 
+    # An undirected CPDAG edge occupies both directions, but is one observation.
+    edge_support = np.zeros_like(bagged_adjacency)
+    for result in bootstrap_results:
+        keep = result["nonzero_flow_vars_indices"]
+        adjacency = result["adjacency_cpdag"]
+        edge_support[np.ix_(keep, keep)] += (adjacency != 0) | (adjacency.T != 0)
+    network_results["edge_support"] = edge_support / float(n_bootstraps)
     adata.uns[flowsig_key]["network"] = network_results

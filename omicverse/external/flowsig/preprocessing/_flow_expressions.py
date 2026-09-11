@@ -750,7 +750,13 @@ def construct_outflow_signals_commot(adata: sc.AnnData,
     
     # Inflow variables are inferred from outflow variables
     outflow_vars = sorted(adata.uns[commot_output_key + '-info']['df_ligrec']['ligand'].unique().tolist())
-    outflow_vars = [var for var in outflow_vars if var in adata.var_names]
+    missing = [var for var in outflow_vars if var not in adata.var_names]
+    if missing:
+        raise ValueError(
+            f'Cannot construct outflow signals for ligands absent from var_names: {missing}. '
+            'Complex ligand aggregation is not supported; provide gene-level ligand signals '
+            'or use a database containing only supported ligands.'
+        )
 
     outflow_interactions = []
     outflow_expressions = np.zeros((adata.n_obs, len(outflow_vars)))

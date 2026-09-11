@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from omicverse.external.flowsig.tools import _network
+from omicverse.external.flowsig.tools import (
+    _network, apply_biological_flow, filter_low_confidence_edges,
+)
 
 
 class _Unpicklable:
@@ -209,3 +211,50 @@ def test_parallel_utigsp_matches_serial_targets_with_zero_variance_column():
     )
     np.testing.assert_array_equal(serial_result["adjacency"][-1], 0)
     np.testing.assert_array_equal(serial_result["adjacency"][:, -1], 0)
+
+
+@pytest.mark.parametrize('interventional', [False, True])
+@pytest.mark.parametrize('reverse_second,expected_support', [(False, 0.5), (True, 1.0)])
+def test_threshold_counts_each_bootstrap_edge_once(monkeypatch, interventional, reverse_second, expected_support):
+    pytest.importorskip('graphical_models')
+    a = ad.AnnData(np.ones((24, 1)))
+    a.obsm['X_flow'] = np.random.default_rng(0).normal(size=(24, 3))
+    a.obs['condition'] = ['control'] * 12 + ['treated'] * 12
+    a.uns['flowsig_network'] = {'flow_var_info': pd.DataFrame(
+        {'Type': ['module'] * 3}, index=['GEM-1', 'GEM-2', 'constant'])}
+    # Variable 2 was dropped in these bootstraps; mapping must stay aligned.
+    def bootstrap(*args):
+        seed = args[-1]
+        matrix = (np.array([[0, 1], [0, 0]]) if seed == 0 else np.array([[0, 0], [1, 0]])) if reverse_second else (
+            np.array([[0, 1], [1, 0]]) if seed == 0 else np.zeros((2, 2)))
+        return {'nonzero_flow_vars_indices': np.array([0, 1]), 'adjacency_cpdag': matrix,
+                'perturbed_targets_indices': [np.array([], dtype=int)]}
+    monkeypatch.setattr(_network, 'run_gsp', bootstrap)
+    monkeypatch.setattr(_network, 'run_utigsp', bootstrap)
+    options = {'condition_key': 'condition', 'control_key': 'control'} if interventional else {}
+    _network.learn_intercellular_flows(a, n_bootstraps=2, **options)
+    apply_biological_flow(a)
+    filter_low_confidence_edges(a, edge_threshold=0.8, adjacency_key='adjacency_validated')
+    net = a.uns['flowsig_network']['network']
+    assert bool(np.count_nonzero(net['adjacency_validated_filtered'])) == reverse_second
+    assert net['edge_support'][0, 1] == expected_support
+    assert not net['edge_support'][2].any()
+
+
+@pytest.mark.parametrize('undirected', [False, True])
+def test_legacy_network_requires_support_only_for_undirected_edges(undirected):
+    pytest.importorskip('graphical_models')
+    a = ad.AnnData(np.ones((2, 1)))
+    adjacency = np.array([[0, 0.9], [0.9 if undirected else 0, 0]])
+    a.uns['flowsig_network'] = {
+        'flow_var_info': pd.DataFrame(index=['A', 'B']),
+        'network': {'adjacency': adjacency},
+    }
+    if undirected:
+        with pytest.raises(ValueError, match='rerun learn_intercellular_flows'):
+            filter_low_confidence_edges(a, edge_threshold=0.8)
+        assert 'adjacency_filtered' not in a.uns['flowsig_network']['network']
+    else:
+        filter_low_confidence_edges(a, edge_threshold=0.8)
+        np.testing.assert_array_equal(
+            a.uns['flowsig_network']['network']['adjacency_filtered'], adjacency)
