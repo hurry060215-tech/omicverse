@@ -706,7 +706,7 @@ def sepal(
         raise ValueError(
             f"No spot has exactly {max_neighs} neighbours — the graph is not the "
             f"lattice this score assumes. Rebuild with "
-            f"`ov.space.spatial_neighbors(adata, n_neighs={max_neighs})`."
+            f"`ov.space.spatial_neighbors(adata, n_neighs={max_neighs}, coord_type='grid')`."
         )
 
     sat_idx = np.vstack([graph.indices[graph.indptr[i]:graph.indptr[i + 1]] for i in sat])
@@ -872,11 +872,9 @@ def sliding_window(
 ):
     """Tile the tissue into square windows and label every spot with its window.
 
-    Useful for testing whether a result holds locally rather than only over the
-    whole section, and for block-wise descriptive summaries. Windows from one
-    section are not independent biological replicates: variation between them
-    describes within-section spatial heterogeneity, not population or condition
-    uncertainty, and must not be used for sample-level inferential p-values.
+    Useful for two things: turning a slide into pseudo-replicates so a statistic
+    can be given an error bar, and testing whether a result holds locally rather
+    than only over the whole section.
 
     With ``overlap`` above zero the windows are laid down every
     ``window_size - overlap`` units, so a spot can fall in several; the assignment

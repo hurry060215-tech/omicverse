@@ -55,7 +55,7 @@ def _svg_multiple_libraries(adata, mode, n_svgs, target_sum, platform,
     frames = []
     for library in libraries:
         subset = adata[labels == library].copy()
-        subset.uns.pop('spatial', None)  # Independent coordinates; no image selection is used here.
+        subset.uns.pop('spatial', None)
         if subset.n_obs < 4:
             frame = pd.DataFrame({'gene': subset.var_names, 'statistic': np.nan, 'pvalue': np.nan})
         else:
@@ -254,8 +254,6 @@ def _spatial_distance_graph(
         n_neighs = int(n_neighs)
         if n_neighs <= 0:
             raise ValueError("n_neighs must be a positive integer.")
-        # sklearn counts the query observation itself when the fitted coordinates
-        # are passed explicitly. Ask for one extra entry, then drop the diagonal.
         query_n = min(n_neighs + 1, n_obs)
         nn = NearestNeighbors(n_neighbors=query_n, algorithm='ball_tree')
         nn.fit(coords)
@@ -544,6 +542,8 @@ def spatial_autocorr(
         if library_key not in adata.obs or adata.obs[library_key].isna().any():
             raise ValueError('library_key must identify every observation without missing labels.')
         labels = adata.obs[library_key].astype(str).to_numpy()
+        if len(set(labels)) != adata.obs[library_key].nunique():
+            raise ValueError('Library labels collide after conversion to strings.')
         graph = _sp.csr_matrix(source_graph)
         edges = graph.tocoo()
         if np.any(labels[edges.row] != labels[edges.col]):
@@ -611,7 +611,6 @@ def spatial_autocorr(
         if not copy:
             adata.uns[uns_key] = result
         return result
-    library_codes = None
 
     # ---- scores ------------------------------------------------------
     if mode == 'moran':
@@ -623,10 +622,7 @@ def spatial_autocorr(
         stat_key = 'C'
         uns_key  = 'gearyC'
 
-    if library_codes is None:
-        pvals_norm = _analytic_pval(scores, g, mode, n, two_tailed)
-    else:
-        pvals_norm = np.full(len(genes), np.nan, dtype=np.float64)
+    pvals_norm = _analytic_pval(scores, g, mode, n, two_tailed)
 
     df = pd.DataFrame({stat_key: scores, 'pval_norm': pvals_norm}, index=genes)
     testable = np.isfinite(vals).all(axis=0) & (np.var(vals, axis=0) > 0)
@@ -639,13 +635,7 @@ def spatial_autocorr(
         rng = np.random.default_rng(seed)
         perm_scores = np.empty((n_perms, len(genes)))
         for i in range(n_perms):
-            if library_codes is None:
-                perm_idx = rng.permutation(n)
-            else:
-                perm_idx = np.arange(n)
-                for code in np.unique(library_codes):
-                    group_idx = np.flatnonzero(library_codes == code)
-                    perm_idx[group_idx] = rng.permutation(group_idx)
+            perm_idx = rng.permutation(n)
             v_perm   = vals[perm_idx]
             perm_scores[i] = (
                 _moran_i_scores(g, v_perm) if mode == 'moran'
@@ -672,7 +662,6 @@ def spatial_autocorr(
     df.loc[~testable, [col for col in df if col != 'testable']] = np.nan
     # ---- multiple-testing correction ---------------------------------
     if corr_method is not None:
-        from statsmodels.stats.multitest import multipletests
         pval_col = 'pval_sim' if (n_perms is not None) else 'pval_norm'
         pvals_adj = _adjust_testable_pvalues(df[pval_col], corr_method)
         df['pval_adj'] = pvals_adj
@@ -927,6 +916,9 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
     """
     import numpy as np
     mode = str(mode).lower()
+    if (mode in ('moran', 'morani', 'somde', 'spatialde')
+            and library_key is None and len(adata.uns.get('spatial', {})) > 1):
+        raise ValueError('Multiple spatial libraries require an explicit library_key for inference.')
     if n_svgs is not None and (isinstance(n_svgs, bool) or not isinstance(n_svgs, (int, np.integer)) or n_svgs < 0):
         raise ValueError('n_svgs must be a non-negative integer or None.')
     threshold = kwargs.get('qval_threshold', 0.05)
