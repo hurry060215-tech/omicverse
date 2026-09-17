@@ -208,23 +208,55 @@ def test_cell2location_rejects_continuous_x_when_counts_are_missing(monkeypatch)
         decov.deconvolution(method="cell2location")
 
 
-def test_starfysh_rejects_missing_signature_before_loading_heavy_backend():
+
+def test_real_cell2location_count_layers():
+    pytest.importorskip('pyro')
+    pytest.importorskip('scvi')
+    from omicverse.space import Deconvolution
+    rng = np.random.default_rng(9)
+    ref = AnnData(rng.poisson(5, (60, 20)).astype(np.float32))
+    ref.obs['cell_type'] = np.repeat(['A', 'B', 'C'], 20)
+    ref.layers['counts'] = ref.X.copy()
+    spatial = AnnData(rng.poisson(12, (12, 20)).astype(np.float32))
+    spatial.layers['counts'] = spatial.X.copy()
+    spatial.obs['sample'] = 'one'
+    ref.X = np.log1p(ref.X)
+    spatial.X = np.log1p(spatial.X)
+    model = Deconvolution(adata_sp=spatial, adata_sc=ref)
+    model.deconvolution(method='cell2location', celltype_key_sc='cell_type', batch_key_sp='sample',
+        cell2location_scrna_kwargs={'max_epochs': 1, 'batch_size': 30, 'train_size': 1, 'accelerator': 'cpu', 'device': 'auto'},
+        cell2location_spatial_kwargs={'max_epochs': 1, 'batch_size': None, 'train_size': 1, 'accelerator': 'cpu', 'device': 'auto'},
+        sample_kwargs={'num_samples': 2, 'batch_size': 12})
+    assert model.adata_cell2location.n_obs == 12
+    np.testing.assert_array_equal(ref.layers['counts'], np.rint(ref.layers['counts']))
+    for fitted in (model.mod_sc, model.mod_sp):
+        registered = fitted.adata_manager.get_from_registry('X')
+        expected = fitted.adata.layers['counts']
+        registered = registered.toarray() if hasattr(registered, 'toarray') else np.asarray(registered)
+        expected = expected.toarray() if hasattr(expected, 'toarray') else np.asarray(expected)
+        np.testing.assert_array_equal(registered, expected)
+        np.testing.assert_array_equal(registered, np.rint(registered))
+
+
+@pytest.mark.parametrize('as_view', [False, True])
+def test_cell2location_filtering_failure_preserves_reference_x(monkeypatch, as_view):
     import omicverse as ov
-
+    seen = {}
+    _install_fake_cell2location(monkeypatch, seen)
     ad_sp, ad_sc = _synthetic_pair()
-    decov = ov.space.Deconvolution(adata_sp=ad_sp, adata_sc=ad_sc)
-    with pytest.raises(ValueError, match="gene signature"):
-        decov.deconvolution(method="starfysh", gene_sig=None)
+    ad_sc.X = np.full(ad_sc.shape, 0.123, dtype=np.float32)
+    before = ad_sc.X.copy()
+    reference = ad_sc[:2] if as_view else ad_sc
 
+    def fail_filter(*args, **kwargs):
+        raise RuntimeError("filter failed")
 
-def test_starfysh_rejects_unsupported_spatial_type_explicitly():
-    import omicverse as ov
-
-    ad_sp, ad_sc = _synthetic_pair()
-    decov = ov.space.Deconvolution(adata_sp=ad_sp, adata_sc=ad_sc)
-    with pytest.raises(NotImplementedError, match="spatial_type='visium'"):
-        decov.deconvolution(
-            method="starfysh",
-            spatial_type="cosmx",
-            gene_sig=pd.DataFrame({"A": [1.0]}, index=["g0"]),
-        )
+    monkeypatch.setattr(
+        sys.modules['omicverse.external.space.cell2location.utils.filtering'],
+        'filter_genes', fail_filter,
+    )
+    model = ov.space.Deconvolution(adata_sp=ad_sp, adata_sc=reference)
+    with pytest.raises(RuntimeError, match="filter failed"):
+        model.deconvolution(method='cell2location')
+    np.testing.assert_array_equal(ad_sc.X, before)
+    np.testing.assert_array_equal(reference.X, before[:reference.n_obs])

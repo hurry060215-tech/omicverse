@@ -278,7 +278,7 @@ def test_rctd_routes_custom_raw_count_layers(monkeypatch):
 
     decov = ov.space.Deconvolution(adata_sp=ad_sp, adata_sc=ad_sc)
     decov.deconvolution(
-        method="rctd",
+        method="RCTD",
         celltype_key_sc="cell_type",
         counts_layer_sc="raw",
         counts_layer_sp="raw",
@@ -322,8 +322,6 @@ def test_rctd_full_mode_real_smoke():
     import omicverse as ov
 
     ad_sp, ad_sc = _synthetic_pair()
-    # The real sigma estimator requires spots with >300 UMI. The generic
-    # routing fixture has ~200 UMI and is not a valid full-runtime fixture.
     ad_sp.layers['counts'] = ad_sp.layers['counts'] * 3
     decov = ov.space.Deconvolution(adata_sp=ad_sp, adata_sc=ad_sc)
     decov.deconvolution(
