@@ -240,8 +240,6 @@ def Cal_Spatial_Net(adata, rad_cutoff=None, k_cutoff=None,
 
     KNN_list = []
     for it in range(indices.shape[0]):
-        # With duplicated coordinates sklearn may return a different zero-distance
-        # spot before the query spot. Remove self by identity, never by position.
         nonself = indices[it] != it
         row_indices = indices[it][nonself]
         row_distances = distances[it][nonself]
@@ -418,9 +416,9 @@ class pySTAligner(object):
                  random_seed: int = 666,
                  iter_comb = None,
                  knn_neigh: int = 100,
-                 mnn_approx = None,
                  Batch_list = None,
                  device = None,
+                 mnn_approx = None,
                  batch_ids = None,
                  pretrain_epochs = None,
              ) -> None:
@@ -481,7 +479,14 @@ class pySTAligner(object):
         Notes:
             - Requires pre-computed spatial networks
             - GPU acceleration recommended for large datasets
-            - Batch_list order must match batch_key order
+            - Combined rows must be contiguous by batch, matching source row order;
+              uniform concatenation suffixes are allowed.
+            - Both stages use Batch_list.X restricted to adata.var_names. Changing
+              combined adata.X does not change the training expression scale.
+            - Named Spatial_Net edges are realigned after row reordering. Graphs
+              without named edges require the original Cal_Spatial_Net row order.
+            - Every requested batch pair must yield usable MNN anchors, and the
+              pair graph must connect all batches.
             - Memory usage scales with dataset size
             - Consider reducing knn_neigh for large datasets
         """
@@ -581,9 +586,7 @@ class pySTAligner(object):
             if len(inferred) == len(Batch_list):
                 resolved_batch_ids = inferred
 
-        if resolved_batch_ids is not None and [
-            str(value) for value in resolved_batch_ids
-        ] != [str(value) for value in section_ids]:
+        if resolved_batch_ids is not None and resolved_batch_ids != list(section_ids):
             raise ValueError(
                 "`batch_ids` (or per-batch constant batch labels) must match the "
                 "first-seen order of adata.obs[batch_key]."

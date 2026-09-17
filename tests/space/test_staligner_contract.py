@@ -3,11 +3,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 from anndata import AnnData
 from scipy import sparse
 
-pytest.importorskip("torch")
+torch = pytest.importorskip("torch")
 pytest.importorskip("torch_geometric")
 
 from omicverse.space import _integrate
@@ -359,3 +358,82 @@ def test_real_staligner_two_stage_cpu_smoke_without_optional_compiled_neighbors(
     assert model._is_fitted
     assert result.obsm["STAligner"].shape == (6, 2)
     assert np.isfinite(result.obsm["STAligner"]).all()
+
+
+def test_mnn_dictionary_sorts_anchors_and_positive_neighbors(monkeypatch):
+    from omicverse.external.STAligner import mnn_utils
+
+    adata = AnnData(
+        np.ones((4, 1), dtype=np.float32),
+        obs=pd.DataFrame(
+            {"batch": ["a", "a", "b", "b"]},
+            index=["a2", "a1", "b2", "b1"],
+        ),
+    )
+    adata.obsm["embed"] = np.arange(4, dtype=float)[:, None]
+    monkeypatch.setattr(
+        mnn_utils,
+        "mnn",
+        lambda *args, **kwargs: {
+            ("b2", "a2"),
+            ("b1", "a2"),
+            ("b1", "a1"),
+        },
+    )
+
+    result = mnn_utils.create_dictionary_mnn(
+        adata,
+        use_rep="embed",
+        batch_name="batch",
+        k=2,
+        approx=False,
+        verbose=0,
+    )["a_b"]
+
+    assert list(result) == ["a1", "a2", "b1", "b2"]
+    assert result["b1"] == ["a1", "a2"]
+
+
+def test_staligner_preserves_original_positional_arguments():
+    batches = [_batch("a"), _batch("b", 10)]
+    model = pySTAligner(
+        _combined(*batches), [4, 2], 2, 0.001, "batch", "STAligner",
+        5, 0.0001, 1, False, 666, [(0, 1)], 1, batches, "cpu",
+        mnn_approx=False,
+    )
+    assert model.Batch_list == batches
+    assert model.device == torch.device("cpu")
+
+
+def test_staligner_tensor_graph_without_torch_sparse(monkeypatch):
+    import importlib.util
+    import sys
+    from omicverse.external.STAligner import gat_conv
+
+    spec = importlib.util.spec_from_file_location("_staligner_without_sparse", gat_conv.__file__)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    monkeypatch.setitem(sys.modules, "torch_sparse", None)
+    spec.loader.exec_module(module)
+    layer = module.GATConv(3, 2, concat=False, add_self_loops=True, bias=False)
+    x = torch.tensor([[1., 0., .5], [0., 1., .5], [.5, .5, 1.]])
+    edges = torch.tensor([[0, 1, 2], [1, 2, 0]])
+    output = layer(x, edges)
+    assert output.shape == (3, 2)
+    assert torch.isfinite(output).all()
+    with pytest.raises(ImportError, match="SparseTensor STAligner inputs"):
+        layer(x, object())
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_staligner_distinguishes_numeric_and_string_batch_identity(explicit):
+    batches = [_batch("shared"), _batch("shared", 10)]
+    batches[0].obs["batch"] = 1
+    batches[1].obs["batch"] = "1"
+    batches[1].X = np.full(batches[1].shape, 9., dtype=np.float32)
+    combined = _combined(*batches)
+    combined.obs["batch"] = np.array([1] * 3 + ["1"] * 3, dtype=object)
+    kwargs = {"batch_ids": ["1", 1]} if explicit else {}
+    with pytest.raises(ValueError, match="first-seen order"):
+        pySTAligner(combined, batch_key="batch", Batch_list=batches[::-1],
+                    n_epochs=2, mnn_approx=False, device="cpu", **kwargs)
