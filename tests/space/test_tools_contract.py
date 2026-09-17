@@ -7,7 +7,6 @@ import pytest
 from anndata import AnnData
 
 from omicverse._registry import get_registry
-from omicverse import space
 from omicverse.space import _tools
 
 
@@ -166,8 +165,7 @@ def test_manual_mapping_uses_documented_pixel_direction_on_integer_coordinates()
 def test_manual_mapping_preserves_legacy_scaling_explicitly():
     adata = _visium_adata(np.array([[2, 4], [4, 8]], dtype=np.int64))
 
-    with pytest.warns(FutureWarning, match="offset_mode='legacy'"):
-        _tools.map_spatial_manual(adata, offset=(2, -4), offset_mode="legacy")
+    _tools.map_spatial_manual(adata, offset=(2, -4), offset_mode="legacy")
 
     assert np.allclose(adata.obsm["spatial1"], [[0.5, 7.0], [2.5, 11.0]])
 
@@ -451,47 +449,29 @@ def test_crop_and_subset_window_have_distinct_registry_entries():
     assert "xlim" in inspect.signature(subset).parameters
 
 
-def test_space_all_includes_the_public_tool_and_tissue_zone_surfaces():
-    assert set(_tools.__all__).issubset(space.__all__)
-    assert {"TissueZones", "nmf_tissue_zones"}.issubset(space.__all__)
+def test_auto_mapping_converts_offsets_using_axes_pixels(monkeypatch):
+    adata = _visium_adata(np.array([[1., 1.], [2., 3.], [4., 2.]]))
+    figures = []
+    original = _tools.plt.subplots
 
+    def capture_figure(*args, **kwargs):
+        fig, ax = original(*args, **kwargs)
+        figures.append((fig, ax))
+        return fig, ax
 
-def test_bin2cell_can_skip_the_optional_geometry_stack(monkeypatch):
-    import omicverse.external.bin2cell as backend
-
-    expected = AnnData(np.ones((1, 1), dtype=np.float32))
-    monkeypatch.setattr(backend, "bin_to_cell", lambda *args, **kwargs: expected)
-
-    result = _tools.bin2cell(
-        _visium_adata([[1, 1]]),
-        add_geometry=False,
-        show_progress=False,
+    monkeypatch.setattr(_tools.plt, "subplots", capture_figure)
+    monkeypatch.setattr(
+        _tools, "find_image_offset_phase_correlation_array_input",
+        lambda first, second: ((10, -7), first),
     )
-
-    assert result is expected
-
-
-def test_segmentation_wrappers_return_the_mutated_adata(monkeypatch, tmp_path):
-    import omicverse.external.bin2cell as backend
-
-    for name in (
-        "destripe",
-        "scaled_he_image",
-        "cellseg",
-        "insert_labels",
-        "expand_labels",
-        "grid_image",
-        "salvage_secondary_labels",
-    ):
-        monkeypatch.setattr(backend, name, lambda *args, **kwargs: None)
-
-    adata = _visium_adata([[1.0, 1.0]])
-    adata.obsm["spatial_cropped_150_buffer"] = adata.obsm["spatial"].copy()
-    adata.obs["n_counts_adjusted"] = [1]
-    he_path = tmp_path / "he.tiff"
-    gex_path = tmp_path / "gex.tiff"
-
-    assert _tools.visium_10x_hd_cellpose_he(adata, he_save_path=str(he_path)) is adata
-    assert _tools.visium_10x_hd_cellpose_expand(adata) is adata
-    assert _tools.visium_10x_hd_cellpose_gex(adata, gex_save_path=str(gex_path)) is adata
-    assert _tools.salvage_secondary_labels(adata) is adata
+    result = _tools.map_spatial_auto(adata)
+    _, ax = figures[0]
+    pixels = ax.get_window_extent()
+    expected = np.array([
+        -10 * abs(np.diff(ax.get_xlim())[0]) / pixels.width,
+        7 * abs(np.diff(ax.get_ylim())[0]) / pixels.height,
+    ])
+    np.testing.assert_allclose(
+        result.obsm["spatial1"] - result.obsm["spatial"],
+        np.broadcast_to(expected, (3, 2)),
+    )

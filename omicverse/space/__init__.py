@@ -76,7 +76,6 @@ from ._neighborhood import (
 from ._cast import CAST
 from ._cellcharter import cellcharter
 from ._tools import *
-from ._tools import __all__ as _tool_exports
 from ._commot import create_communication_anndata,update_classification_from_database
 from ._tissue_zones import nmf_tissue_zones, TissueZones
 from ._deconvolution import Deconvolution,calculate_gene_signature
@@ -200,4 +199,3 @@ __all__ = [
     'niche',
     'geom',
 ]
-__all__ = list(dict.fromkeys([*__all__, *_tool_exports, 'TissueZones', 'nmf_tissue_zones']))

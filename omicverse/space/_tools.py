@@ -99,10 +99,6 @@ def _crop_scaled_image(image, x0, y0, x1, y1):
         ix0, iy0, ix1, iy1 = rounded
         return image[iy0:iy1, ix0:ix1].copy()
 
-    # A plain floor/ceil slice changes the image origin by up to one pixel when
-    # the requested full-resolution crop maps to fractional pixels at another
-    # resolution. Sample that resolution at the exact origin instead. This
-    # keeps ``new_spatial * tissue_<resolution>_scalef`` aligned to the image.
     from scipy.ndimage import affine_transform
 
     trailing_shape = image.shape[2:]
@@ -112,8 +108,6 @@ def _crop_scaled_image(image, x0, y0, x1, y1):
     for channel in range(flat.shape[2]):
         channel_image = flat[:, :, channel]
         if channel_image.dtype == np.float16:
-            # scipy.ndimage does not accept float16 input; calculate in float32
-            # and cast back through the preallocated output.
             channel_image = channel_image.astype(np.float32)
         sampled[:, :, channel] = affine_transform(
             channel_image,
@@ -221,9 +215,7 @@ def crop_space_visium(adata, crop_loc, crop_area,
             Interpretation of ``crop_loc`` and ``crop_area``. ``'xy'`` means
             ``(x, y)`` and ``(width, height)``. ``'yx'`` preserves the legacy
             Squidpy-style ``(y, x)`` / ``(height, width)`` convention. ``None``
-            currently selects legacy ``'yx'`` with a deprecation warning;
-            specify the order explicitly because a future major release will
-            default to ``'xy'``.
+            selects legacy ``'yx'``.
         library_key: str or None
             Observation column identifying library membership. Required for a
             multi-library AnnData.
@@ -277,15 +269,6 @@ def crop_space_visium(adata, crop_loc, crop_area,
     full_img = np.asarray(images[res])
 
     if coordinate_order is None:
-        import warnings
-
-        warnings.warn(
-            "The implicit crop coordinate order is deprecated and currently "
-            "preserves legacy (y, x)/(height, width) behavior. Pass "
-            "coordinate_order='xy' or 'yx' explicitly.",
-            FutureWarning,
-            stacklevel=2,
-        )
         coordinate_order = 'yx'
     coordinate_order = str(coordinate_order).lower()
     if coordinate_order == 'xy':
@@ -306,8 +289,6 @@ def crop_space_visium(adata, crop_loc, crop_area,
     y1 = max(0, min(y0 + h, img_h))
     x1 = max(0, min(x0 + w, img_w))
 
-    # Convert the selected-resolution crop to the shared full-resolution
-    # coordinate frame, then crop every image resolution with its own scale.
     x0_spatial = x0 / scalef
     y0_spatial = y0 / scalef
     x1_spatial = x1 / scalef
@@ -578,7 +559,6 @@ def find_image_offset_phase_correlation_array_input(image1_array, image2_array):
     def as_gray(image):
         image = np.asarray(image)
         if image.ndim == 3 and image.shape[2] in (3, 4):
-            # RGB luminance coefficients; ignore alpha, as COLOR_RGB2GRAY did.
             image = image[..., :3].astype(np.float32) @ np.array(
                 [0.299, 0.587, 0.114], dtype=np.float32
             )
@@ -720,8 +700,6 @@ def find_image_offset_phase_correlation_torch(image1_tensor, image2_tensor):
     if shift_x > w // 2:
         shift_x -= w
     
-    # affine_grid translations use normalized output-to-input coordinates. The
-    # phase-correlation shift already has the correct inverse-sampling sign.
     tx = 0.0 if w <= 1 else 2.0 * float(shift_x) / float(w - 1)
     ty = 0.0 if h <= 1 else 2.0 * float(shift_y) / float(h - 1)
     theta = torch.tensor(
@@ -1032,7 +1010,8 @@ def map_spatial_auto(
     plt.yticks([])
     plt.axis(False)
 
-    fig1.savefig(image1_path,bbox_inches='tight', )
+    fig1.savefig(image1_path, bbox_inches='tight', dpi=fig1.dpi)
+    axes_pixels = ax1.get_window_extent()
 
     fig2, ax2 = plt.subplots(figsize=figsize)
     ax=ax2
@@ -1043,7 +1022,7 @@ def map_spatial_auto(
     plt.xticks([])
     plt.yticks([])
     plt.axis(False)
-    fig2.savefig(image2_path,bbox_inches='tight', )
+    fig2.savefig(image2_path, bbox_inches='tight', dpi=fig2.dpi)
 
     
 
@@ -1085,16 +1064,13 @@ def map_spatial_auto(
     # 1) 先把 spatial1 转成 float64
     adata_rotated.obsm['spatial1'] = adata_rotated.obsm['spatial'].astype(np.float64)
 
-    # Convert registration pixels back into plotted coordinate units. This is
-    # derived from the rendered axes span, so centered/negative coordinates do
-    # not collapse the translation to zero.
     x_span = abs(float(cur_coords[1] - cur_coords[0]))
     y_span = abs(float(cur_coords[3] - cur_coords[2]))
     x_per_pixel = (
-        x_span / max(img1_from_memory.shape[1], 1) / image_scale_factor
+        x_span / axes_pixels.width / image_scale_factor
     )
     y_per_pixel = (
-        y_span / max(img1_from_memory.shape[0], 1) / image_scale_factor
+        y_span / axes_pixels.height / image_scale_factor
     )
     adata_rotated.obsm['spatial1'][library_mask, 0] -= offset[0] * x_per_pixel
     adata_rotated.obsm['spatial1'][library_mask, 1] -= offset[1] * y_per_pixel
@@ -1144,7 +1120,7 @@ def map_spatial_manual(
             Coordinate key receiving the translated floating-point values.
         offset_mode: {'legacy', 'absolute'}, default='legacy'
             ``'legacy'`` preserves the historical mean/max-scaled subtraction
-            and emits a deprecation warning. ``'absolute'`` applies ``(dx, dy)``
+            behavior. ``'absolute'`` applies ``(dx, dy)``
             directly in the coordinate units, with positive values moving right
             and down.
         library_id: str or None
@@ -1205,15 +1181,6 @@ def map_spatial_manual(
     if offset_mode == 'absolute':
         translated[library_mask, :2] = selected + offset
     elif offset_mode == 'legacy':
-        import warnings
-
-        warnings.warn(
-            "offset_mode='legacy' preserves the historical mean/max-scaled "
-            "translation and is deprecated. Use offset_mode='absolute' for "
-            "explicit coordinate-unit offsets.",
-            FutureWarning,
-            stacklevel=2,
-        )
         maxima = np.max(selected, axis=0)
         if np.any(np.isclose(maxima, 0)):
             raise ValueError(
@@ -1328,7 +1295,6 @@ def visium_10x_hd_cellpose_he(
                   mpp=mpp, 
                   labels_key="labels_he"
                  )
-    return adata
     
 @register_function(
     aliases=["Visium细胞扩展", "visium_10x_hd_cellpose_expand", "cellpose_expand", "细胞标签扩展", "空间扩展"],
@@ -1372,8 +1338,8 @@ def visium_10x_hd_cellpose_expand(
 
     Returns
     -------
-    AnnData
-        The same object after updating labels in place.
+    None
+        Updates labels in ``adata`` in place.
     """
     from ..external.bin2cell import expand_labels
     expand_labels(adata, 
@@ -1382,7 +1348,6 @@ def visium_10x_hd_cellpose_expand(
                   max_bin_distance=max_bin_distance,
                   **kwargs,
                  )
-    return adata
     
 @register_function(
     aliases=["Visium细胞基因表达", "visium_10x_hd_cellpose_gex", "cellpose_gex", "细胞基因表达映射", "细胞水平表达"],
@@ -1443,8 +1408,8 @@ def visium_10x_hd_cellpose_gex(
 
     Returns
     -------
-    AnnData
-        The same object after writing ``labels_gex`` in place.
+    None
+        Writes ``labels_gex`` back into ``adata``.
     """
     from ..external.bin2cell import grid_image, cellseg, insert_labels,destripe
     #if gex_save_path's file exist, jump grid_image to stardist
@@ -1469,7 +1434,6 @@ def visium_10x_hd_cellpose_gex(
                   mpp=mpp, 
                   labels_key="labels_gex"
                  )
-    return adata
     
 @register_function(
     aliases=["挂失次级标签", "salvage_secondary_labels", "rescue_labels", "标签救救", "次级标签恢复"],
@@ -1512,14 +1476,13 @@ def salvage_secondary_labels(
 
     Returns
     -------
-    AnnData
-        The same object after updating merged labels in place.
+    None
+        Updates merged labels in ``adata``.
     """
     from ..external.bin2cell import salvage_secondary_labels
     salvage_secondary_labels(adata, primary_label=primary_label,
                              secondary_label=secondary_label,
                              labels_key=labels_key)
-    return adata
     
     
     
@@ -1542,7 +1505,7 @@ def salvage_secondary_labels(
 def bin2cell(
         adata,
         labels_key="labels_joint",
-        spatial_keys=None,
+        spatial_keys=["spatial"],
         diameter_scale_factor=None,
         add_geometry: bool = True,
         geometry_key: str = "geometry",
@@ -1559,11 +1522,11 @@ def bin2cell(
         Spatial bin-level AnnData.
     labels_key : str, default='labels_joint'
         Label key assigning bins to cells.
-    spatial_keys : list or None, default=None
+    spatial_keys : list, default=['spatial']
         Spatial coordinate keys to aggregate.
     diameter_scale_factor : float, optional
         Optional scaling factor for estimated cell diameters.
-    add_geometry : bool, default=True
+    add_geometry : bool, default=False
         Whether to generate polygon geometry from labeled bins and store
         WKT strings in ``obs[geometry_key]`` of the returned cell-level AnnData.
     geometry_key : str, default='geometry'
@@ -1586,9 +1549,6 @@ def bin2cell(
         Cell-level AnnData generated from labeled bins.
     """
     from ..external.bin2cell import bin_to_cell
-
-    if spatial_keys is None:
-        spatial_keys = ["spatial"]
     cell_adata = bin_to_cell(
         adata,
         labels_key=labels_key,
@@ -1602,13 +1562,7 @@ def bin2cell(
         import warnings
         from concurrent.futures import ThreadPoolExecutor, as_completed
         import pandas as pd
-        try:
-            import shapely
-        except ImportError as exc:
-            raise ImportError(
-                "`bin2cell(add_geometry=True)` requires Shapely. Install it "
-                "with `pip install shapely`."
-            ) from exc
+        import shapely
         from shapely.errors import GEOSException
         try:
             from tqdm.auto import tqdm
