@@ -7,7 +7,6 @@ import scanpy as sc
 from anndata import AnnData
 import numpy as np
 import os
-import warnings
 from scipy.sparse import csr_matrix
 from .._settings import add_reference
 from .._registry import register_function
@@ -70,8 +69,9 @@ class pySTAGATE:
         Number of tiles along x-axis for mini-batch graph construction.
     num_batch_y : int
         Number of tiles along y-axis for mini-batch graph construction.
-    spatial_key : list, default=['X', 'Y']
-        Coordinate columns in ``adata.obs`` used to build spatial graph.
+    spatial_key : str or list, optional
+        Coordinate key in obsm or two columns in obs. If omitted, uses
+        obs X/Y when present, otherwise obsm['spatial'].
     batch_size : int, default=1
         Number of tiled graphs per optimization step.
     rad_cutoff : int, default=200
@@ -118,13 +118,13 @@ class pySTAGATE:
                  adata: AnnData,
                  num_batch_x,
                  num_batch_y,
-                 spatial_key: list = None,
+                 spatial_key=None,
                  batch_size: int = 1,
                 rad_cutoff: int = 200,
                 num_epoch: int = 1000,
                 lr: float = 0.001,
                 weight_decay: float = 1e-4,
-                hidden_dims: list = None,
+                hidden_dims: list = [512, 30],
                 device: str = 'cuda:0')-> None:
         """Initialize STAGATE training components.
 
@@ -136,8 +136,10 @@ class pySTAGATE:
             Number of x-axis tiles for batch graph generation.
         num_batch_y : int
             Number of y-axis tiles for batch graph generation.
-        spatial_key : list, default=['X', 'Y']
-            Coordinate columns in ``adata.obs``.
+        spatial_key : str or list, optional
+            An obsm coordinate key or two obs coordinate columns. If omitted,
+            uses obs X/Y when present, otherwise obsm['spatial'].
+            Selected coordinates are used on a working copy.
         batch_size : int, default=1
             Number of tiled samples per gradient step.
         rad_cutoff : int, default=200
@@ -167,17 +169,6 @@ class pySTAGATE:
         if spatial_key is None:
             if all(column in adata.obs for column in ('X', 'Y')):
                 spatial_columns = ['X', 'Y']
-                if 'spatial' in adata.obsm:
-                    warnings.warn(
-                        "pySTAGATE found both legacy adata.obs['X'/'Y'] and "
-                        "adata.obsm['spatial']; the omitted spatial_key currently "
-                        "preserves the legacy obs columns. Pass "
-                        "spatial_key='spatial' explicitly to use canonical "
-                        "coordinates. The automatic legacy preference will be "
-                        "removed in a future release.",
-                        FutureWarning,
-                        stacklevel=2,
-                    )
             elif 'spatial' in adata.obsm:
                 spatial_columns = ['__ov_stagate_x', '__ov_stagate_y']
                 coords = np.asarray(adata.obsm['spatial'], dtype=np.float64)
@@ -207,7 +198,6 @@ class pySTAGATE:
         if not np.isfinite(selected_coords).all():
             raise ValueError("STAGATE spatial coordinates must be finite.")
         adata.obsm['spatial'] = selected_coords
-        hidden_dims = [512, 30] if hidden_dims is None else list(hidden_dims)
         # Initialize device
         device = torch.device(device if torch.cuda.is_available() else 'cpu')
         self.device=device
@@ -389,7 +379,7 @@ class pySTAGATE:
 @register_function(
     aliases=["空间聚类分析", "clusters", "spatial_clustering", "多方法聚类", "空间域聚类"],
     category="space",
-    description="Compute spatial representations with STAGATE, GraphST, CAST, BINARY, or BANKSY",
+    description="Perform spatial clustering using multiple methods (STAGATE, GraphST, CAST, BINARY)",
     prerequisites={
         'optional_functions': []
     },
@@ -422,7 +412,7 @@ class pySTAGATE:
 )
 def clusters(adata,
              methods,
-             methods_kwargs=None,
+             methods_kwargs,
              batch_key=None,
              spatial_key='spatial',
              lognorm=50*1e4,
@@ -470,88 +460,8 @@ def clusters(adata,
         ... }
         >>> adata = ov.space.clusters(adata, methods, methods_kwargs)
     """
-    import copy
     from scipy.sparse import issparse
-
-    canonical_methods = {
-        'stagate': 'STAGATE',
-        'graphst': 'GraphST',
-        'cast': 'CAST',
-        'binary': 'BINARY',
-        'banksy': 'Banksy',
-    }
-    if isinstance(methods, str):
-        methods = [methods]
-    methods = list(methods)
-    unknown = [method for method in methods if str(method).lower() not in canonical_methods]
-    if unknown:
-        raise ValueError(
-            f"Unsupported spatial clustering method(s): {unknown}. "
-            f"Choose from: {list(canonical_methods.values())}."
-        )
-    methods = [canonical_methods[str(method).lower()] for method in methods]
-
-    default_method_kwargs = {
-        'STAGATE': {
-            'num_batch_x': 3,
-            'num_batch_y': 2,
-            'spatial_key': ['X', 'Y'],
-            'rad_cutoff': 200,
-            'num_epoch': 1000,
-            'lr': 0.001,
-            'weight_decay': 1e-4,
-            'hidden_dims': [512, 30],
-            'device': 'cuda:0',
-            'n_top_genes': 2000,
-        },
-        'GraphST': {'device': 'cuda:0', 'n_pcs': 30},
-        'CAST': {
-            'output_path_t': 'result/CAST_gas/output',
-            'device': 'cuda:0',
-            'gpu_t': 0,
-        },
-        'BINARY': {
-            'use_method': 'KNN',
-            'cutoff': 6,
-            'obs_key': 'BINARY_sample',
-            'use_list': None,
-            'pos_weight': 10,
-            'device': 'cuda:0',
-            'hidden_dims': [512, 30],
-            'n_epochs': 1000,
-            'lr': 0.001,
-            'key_added': 'BINARY',
-            'gradient_clipping': 5,
-            'weight_decay': 0.0001,
-            'verbose': True,
-            'random_seed': 0,
-            'n_top_genes': 2000,
-        },
-        'Banksy': {
-            'num_neighbours': 15,
-            'nbr_weight_decay': 'scaled_gaussian',
-            'max_m': 1,
-            'lambda_list': [0.2],
-            'resolutions': [0.8],
-            'add_nonspatial': False,
-            'variance_balance': False,
-            'match_labels': False,
-            'filepath': 'result/Banksy',
-        },
-    }
-    user_kwargs = methods_kwargs or {}
-    normalized_user_kwargs = {}
-    for method, params in user_kwargs.items():
-        canonical = canonical_methods.get(str(method).lower(), str(method))
-        if params is None:
-            params = {}
-        if not isinstance(params, dict):
-            raise TypeError(f"methods_kwargs[{method!r}] must be a dict or None.")
-        normalized_user_kwargs[canonical] = copy.deepcopy(params)
-    methods_kwargs = {}
-    for method in methods:
-        methods_kwargs[method] = copy.deepcopy(default_method_kwargs[method])
-        methods_kwargs[method].update(normalized_user_kwargs.get(method, {}))
+    from ..external.GraphST import GraphST
 
     for method in methods:
         if method=='STAGATE':
@@ -581,8 +491,6 @@ def clusters(adata,
 
         elif method=='GraphST':
             print('The GraphST method is used to embed the spatial data.')
-            from ..external.GraphST import GraphST
-
             adata_copy=adata.copy()
             if 'GraphST' not in methods_kwargs:
                 methods_kwargs['GraphST']={'device':'cuda:0','n_pcs':30,
@@ -630,15 +538,8 @@ def clusters(adata,
             coords_raw = {sample_t: np.array(adata.obs[['X','Y']])[adata.obs['CAST_sample'] == sample_t] for sample_t in samples}
             
             if ('norm_1e4' not in adata.layers) and ('counts' in adata.layers):
-                normalized = sc.pp.normalize_total(
-                    adata,
-                    target_sum=1e4,
-                    layer='counts',
-                    inplace=False,
-                )['X']
-                adata.layers['norm_1e4'] = (
-                    normalized.toarray() if issparse(normalized) else np.asarray(normalized)
-                )
+                adata.layers['norm_1e4'] = sc.pp.normalize_total(adata, target_sum=1e4, layer='counts',
+                                                 inplace=False)['X'].toarray() # we use normalized counts for each cell as input gene expression
                 exp_dict = {sample_t: adata[adata.obs['CAST_sample'] == sample_t].layers['norm_1e4'] for sample_t in samples}
             else:
                 exp_dict = {sample_t: adata[adata.obs['CAST_sample'] == sample_t].X for sample_t in samples}
@@ -779,8 +680,8 @@ def clusters(adata,
 
             add_reference(adata,'Banksy','clustering with Banksy')
 
-        else:  # guarded above; retained as a defensive invariant
-            raise RuntimeError(f"Unhandled spatial clustering method {method!r}.")
+        else:
+            print(f'The method {method} is not supported.')
     return adata
 
 @register_function(
@@ -809,7 +710,7 @@ def clusters(adata,
         "# Custom merging parameters",
         "result = ov.space.merge_cluster(adata, groupby='leiden',",
         "                                use_rep='X_pca', threshold=0.1,",
-        "                                plot=False)",
+        "                                start_idx=1, plot=False)",
         "# Access merged clusters",
         "merged_labels = adata.obs[f'{groupby}_tree']"
     ],
@@ -842,8 +743,7 @@ def merge_cluster(adata,
     plot : bool, default=True
         Whether to display dendrogram with threshold line.
     start_idx : int, default=0
-        Retained for backward-compatible calls. Actual category labels are now
-        mapped directly, so this offset is no longer needed.
+        Index offset applied to original cluster IDs before remapping.
     **kwargs
         Extra arguments passed to ``scanpy.pl.dendrogram``.
 
@@ -870,26 +770,6 @@ def merge_cluster(adata,
         >>> # Access merged clusters
         >>> print(adata.obs['leiden_tree'])
     """
-    import pandas as pd
-
-    if groupby not in adata.obs:
-        raise KeyError(f"{groupby!r} was not found in adata.obs.")
-    if use_rep not in adata.obsm:
-        raise KeyError(f"{use_rep!r} was not found in adata.obsm.")
-    if start_idx != 0:
-        import warnings
-
-        warnings.warn(
-            "`start_idx` is deprecated and ignored because merge_cluster now "
-            "maps the actual category labels directly.",
-            FutureWarning,
-            stacklevel=2,
-        )
-
-    if not isinstance(adata.obs[groupby].dtype, pd.CategoricalDtype):
-        adata.obs[groupby] = pd.Categorical(adata.obs[groupby])
-    categories = list(adata.obs[groupby].cat.categories)
-
     sc.tl.dendrogram(adata,groupby=groupby,use_rep=use_rep)
     import numpy as np
     from scipy.cluster.hierarchy import fcluster
@@ -905,15 +785,11 @@ def merge_cluster(adata,
     
     # 创建字典
     cluster_dict = {}
-    if len(clusters) != len(categories):
-        raise RuntimeError(
-            "Dendrogram cluster assignments do not match the number of input categories."
-        )
-    for category, cluster_id in zip(categories, clusters):
+    for idx, cluster_id in enumerate(clusters):
         key = f'c{cluster_id}'
         if key not in cluster_dict:
             cluster_dict[key] = []
-        cluster_dict[key].append(category)
+        cluster_dict[key].append(idx+start_idx)
     
     reversed_dict = {}
     for key, values in cluster_dict.items():
@@ -921,8 +797,8 @@ def merge_cluster(adata,
             reversed_dict[str(value)] = key
     
     #adata.obs['mclust_tree']=adata.obs['mclust'].map(reversed_dict)
-    merged = adata.obs[groupby].astype(str).map(reversed_dict)
-    adata.obs[f'{groupby}_tree'] = pd.Categorical(merged)
+    adata.obs[groupby]=adata.obs[groupby].astype(str)
+    adata.obs[f'{groupby}_tree']=adata.obs[groupby].map(reversed_dict)
     print(f'The merged cluster information is stored in adata.obs["{groupby}_tree"].')
     if plot:
         ax=sc.pl.dendrogram(adata,groupby=groupby,show=False,**kwargs)

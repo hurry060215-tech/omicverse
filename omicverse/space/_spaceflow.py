@@ -152,8 +152,7 @@ class pySpaceFlow(object):
             if getattr(exc, 'name', None) == 'gudhi' or 'gudhi' in str(exc):
                 raise ImportError(
                     "pySpaceFlow requires Gudhi for spatial graph construction. "
-                    "Install it with `pip install gudhi` "
-                    "or `pip install gudhi`."
+                    "Install it with `pip install gudhi`."
                 ) from exc
             raise
 

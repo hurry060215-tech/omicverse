@@ -15,7 +15,7 @@ from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
 try:
     from torch_sparse import SparseTensor, set_diag
     _TORCH_SPARSE_IMPORT_ERROR = None
-except (ImportError, OSError) as exc:  # Tensor edge_index paths do not require torch-sparse.
+except (ImportError, OSError) as exc:
     SparseTensor = None
     set_diag = None
     _TORCH_SPARSE_IMPORT_ERROR = exc
