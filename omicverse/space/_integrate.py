@@ -487,6 +487,9 @@ class pySTAligner(object):
               without named edges require the original Cal_Spatial_Net row order.
             - Every requested batch pair must yield usable MNN anchors, and the
               pair graph may contain separate alignment groups.
+            - MNN candidate traversal and first-positive selection follow the
+              original implementation. Its set traversal can depend on Python's
+              hash order; a seed alone does not promise cross-process equality.
             - Memory usage scales with dataset size
             - Consider reducing knn_neigh for large datasets
         """
@@ -656,20 +659,16 @@ class pySTAligner(object):
                               prune_edge_index=torch.LongTensor(np.array([])),
                               x=torch.FloatTensor(adata_tmp_X)))
 
-        loader_generator = torch.Generator()
-        loader_generator.manual_seed(int(random_seed))
         loader = DataLoader(
             data_list,
             batch_size=1,
             shuffle=True,
-            generator=loader_generator,
         )
 
         self.loader=loader
         self.adata = adata
         self.data_list = data_list
         self.batch_adjs = batch_adjs
-        self._loader_generator = loader_generator
 
         # hyper-parameters
         self.lr=lr
@@ -713,7 +712,7 @@ class pySTAligner(object):
                 hidden_dims=[adata.X.shape[1], hidden_dims[0], hidden_dims[1]]
             ).to(self.device)
             # Upstream shuffles after model initialization consumes RNG draws.
-            self._loader_generator.set_state(torch.get_rng_state())
+            self._training_rng_state = torch.get_rng_state()
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr,
                                           weight_decay=weight_decay)
 
@@ -751,6 +750,16 @@ class pySTAligner(object):
             - Memory usage increases during training
             - Consider batch size for large datasets
         """
+        # DataLoader's implicit RandomSampler first draws its own seed from
+        # the global CPU stream. Passing a Generator directly changes that
+        # algorithm, even with the same initial state. Scope the original stream
+        # instead, preserving upstream draws without leaking RNG changes.
+        with torch.random.fork_rng(devices=[]):
+            torch.set_rng_state(self._training_rng_state)
+            self._train()
+            self._training_rng_state = torch.get_rng_state()
+
+    def _train(self):
         self._is_fitted = False
         # Preserve upstream NumPy sampling without changing global RNG state.
         rng = np.random.RandomState(self.random_seed)
@@ -885,7 +894,6 @@ class pySTAligner(object):
                     pair_data_list,
                     batch_size=1,
                     shuffle=True,
-                    generator=self._loader_generator,
                 )
 
             for batch in pair_loader:

@@ -49,10 +49,13 @@ def create_dictionary_mnn(adata, use_rep, batch_name, k = 50, save_on_disk = Tru
 
         G = nx.Graph()
         G.add_edges_from(match)
-        # Use observation order, not barcode spelling, to order MNN candidates.
-        positions = {name: pos for pos, name in enumerate(cell_names)}
-        for anchor in sorted(G.nodes, key=positions.__getitem__):
-            mnns[key_name1][anchor] = sorted(G.neighbors(anchor), key=positions.__getitem__)
+        # Preserve the upstream graph traversal: the trainer takes the first
+        # candidate and assigns negative draws in this same anchor order.
+        node_names = np.array(G.nodes)
+        adjacency = nx.adjacency_matrix(G)
+        neighbors = np.split(adjacency.indices, adjacency.indptr[1:-1])
+        for anchor, indices in zip(node_names, neighbors):
+            mnns[key_name1][anchor] = list(node_names[indices])
     return(mnns)
 
 def validate_sparse_labels(Y):

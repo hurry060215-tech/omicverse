@@ -357,7 +357,7 @@ def test_real_staligner_two_stage_cpu_smoke_without_optional_compiled_neighbors(
     assert np.isfinite(result.obsm["STAligner"]).all()
 
 
-def test_mnn_dictionary_preserves_observation_order(monkeypatch):
+def test_mnn_dictionary_preserves_upstream_graph_order(monkeypatch):
     from omicverse.external.STAligner import mnn_utils
 
     adata = AnnData(
@@ -371,11 +371,11 @@ def test_mnn_dictionary_preserves_observation_order(monkeypatch):
     monkeypatch.setattr(
         mnn_utils,
         "mnn",
-        lambda *args, **kwargs: {
+        lambda *args, **kwargs: [
             ("b2", "a2"),
             ("b1", "a2"),
             ("b1", "a1"),
-        },
+        ],
     )
 
     result = mnn_utils.create_dictionary_mnn(
@@ -387,7 +387,7 @@ def test_mnn_dictionary_preserves_observation_order(monkeypatch):
         verbose=0,
     )["a_b"]
 
-    assert list(result) == ["a2", "a1", "b2", "b1"]
+    assert list(result) == ["b2", "a2", "b1", "a1"]
     assert result["b1"] == ["a2", "a1"]
 
 
@@ -451,19 +451,6 @@ def test_short_training_requires_explicit_schedule():
                     n_epochs=100, mnn_approx=False, device="cpu")
 
 
-def test_mnn_selected_positive_is_invariant_to_barcode_renaming():
-    from omicverse.external.STAligner.mnn_utils import create_dictionary_mnn
-    adata = AnnData(np.ones((4, 2)), obs=pd.DataFrame(
-        {"batch": ["A", "A", "B", "B"]}, index=["a1", "a2", "b1", "b2"]))
-    adata.obsm["z"] = np.array([[0., 0.], [1., 0.], [.1, 0.], [.9, 0.]])
-    def selected_rows(data):
-        pairs = create_dictionary_mnn(data, "z", "batch", k=2, approx=False, verbose=0)["A_B"]
-        return [(data.obs_names.get_loc(a), data.obs_names.get_loc(p[0])) for a, p in pairs.items()]
-    before = selected_rows(adata)
-    adata.obs_names = ["a1", "a2", "z", "b"]
-    assert selected_rows(adata) == before
-
-
 def test_triplet_negative_draws_match_upstream_numpy_sampling(monkeypatch):
     batches = [_batch("a"), _batch("b")]
     combined = _combined(*batches)
@@ -485,3 +472,29 @@ def test_triplet_negative_draws_match_upstream_numpy_sampling(monkeypatch):
     expected = [reference_rng.randint(3) + (0 if i < 3 else 3) for i in range(6)]
     assert captured[0].negative_ind.tolist() == expected
     assert any(i == negative for i, negative in enumerate(expected))
+
+
+def test_training_loader_matches_upstream_rng_consumption_and_restores_state(monkeypatch):
+    from torch_geometric.data import Data
+    from torch_geometric.loader import DataLoader
+    from omicverse.external.STAligner.STALIGNER import STAligner
+    batches = [_batch("a"), _batch("b"), _batch("c")]
+    combined = _combined(*batches)
+    model = pySTAligner(combined, batch_key="batch", Batch_list=batches,
+                       hidden_dims=[4, 2], n_epochs=2, pretrain_epochs=1,
+                       random_seed=7, mnn_approx=False, device="cpu")
+    data = [Data(x=torch.full((1, 1), float(i))) for i in range(3)]
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(7)
+        STAligner(hidden_dims=[2, 4, 2])
+        original_loader = DataLoader(data, batch_size=1, shuffle=True)
+        expected = [[batch.x.item() for batch in original_loader] for _ in range(4)]
+    actual = []
+    def inspect_loader():
+        loader = DataLoader(data, batch_size=1, shuffle=True)
+        actual.extend([[batch.x.item() for batch in loader] for _ in range(4)])
+    monkeypatch.setattr(model, "_train", inspect_loader)
+    before = torch.get_rng_state().clone()
+    model.train()
+    assert actual == expected
+    assert torch.equal(torch.get_rng_state(), before)
