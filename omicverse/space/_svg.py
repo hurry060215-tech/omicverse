@@ -875,6 +875,16 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
         ``adata.var['space_variable_features']`` and ``adata.var['highly_variable']``.
 
     Notes:
+        - Moran defaults to the analytical normal approximation (n_perms=None).
+          Explicit positive n_perms enables expression-row permutations. Their
+          minimum p-value is 1/(n_perms+1); choose a budget appropriate for the
+          number of tested genes and the desired FDR threshold.
+        - Moran tests positive spatial autocorrelation by default. Its permutation
+          null shuffles expression rows, not graph rows; these conventions do not
+          imply Squidpy p-value equivalence.
+        - Multiple libraries use BH correction across all testable library-gene
+          pairs and a union of per-library selections, rather than independent
+          per-library correction.
         - PROST mode requires opencv-python package
         - Different modes use different statistical approaches:
             - PROST: Pattern recognition and spatial autocorrelation
@@ -1012,7 +1022,7 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
         add_reference(adata,'scanpy','non-spatial Pearson-residual HVG prefilter')
     elif mode in {'morani', 'moran'}:
         n_jobs        = kwargs.get('n_jobs', 1)
-        n_perms       = kwargs.get('n_perms', 100)
+        n_perms       = kwargs.get('n_perms', None)
         genes = adata.var_names.values
         spatial_neighbors(adata, library_key=library_key,
                           n_neighs=kwargs.get('n_neighs', 6), radius=kwargs.get('radius'))

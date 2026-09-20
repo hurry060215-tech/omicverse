@@ -481,3 +481,37 @@ def test_autocorr_rejects_colliding_library_labels_on_existing_graph(explicit):
     adata.obs['slice'] = np.array([1] * 4 + ['1'] * 4, dtype=object)
     with pytest.raises(ValueError, match='collide'):
         spatial_autocorr(adata, library_key='slice' if explicit else None, copy=True)
+
+
+def test_default_moran_detects_sparse_strong_signals():
+    rng = np.random.default_rng(13)
+    coords = np.stack(np.meshgrid(np.arange(10), np.arange(10)), axis=-1).reshape(-1, 2)
+    x = rng.poisson(2, (100, 1000)).astype(float)
+    x[:, :20] = (coords[:, 0] < 5)[:, None] * 20 + rng.poisson(.2, (100, 20))
+    adata = AnnData(x)
+    adata.obsm["spatial"] = coords.astype(float)
+    svg(adata, mode="moran", seed=42)
+    assert adata.var["space_variable_features"].iloc[:20].all()
+    assert "pval_sim" not in adata.uns["moranI"]
+    np.testing.assert_allclose(adata.var["moranI_pval"], adata.uns["moranI"]["pval_norm"].reindex(adata.var_names))
+
+
+def test_sepal_accepts_radius_lattice_independent_of_graph_metadata():
+    from omicverse.space._neighborhood import sepal
+    coords = np.stack(np.meshgrid(np.arange(5), np.arange(5)), axis=-1).reshape(-1, 2).astype(float)
+    adata = AnnData(np.random.default_rng(0).poisson(3, (25, 2)).astype(float))
+    adata.obsm["spatial"] = coords
+    spatial_neighbors(adata, radius=1.01)
+    with_metadata = sepal(adata, max_neighs=4, n_iter=5, copy=True)
+    adata.uns.pop("spatial_neighbors")
+    without_metadata = sepal(adata, max_neighs=4, n_iter=5, copy=True)
+    pd.testing.assert_frame_equal(with_metadata, without_metadata)
+
+
+def test_sepal_rejects_overconnected_graph_without_metadata():
+    from omicverse.space._neighborhood import sepal
+    adata = AnnData(np.ones((6, 1)))
+    adata.obsm["spatial"] = np.column_stack([np.arange(6), np.zeros(6)])
+    adata.obsp["spatial_connectivities"] = sparse.csr_matrix(np.ones((6, 6)) - np.eye(6))
+    with pytest.raises(ValueError, match="more than 4 neighbours"):
+        sepal(adata, max_neighs=4, copy=True)

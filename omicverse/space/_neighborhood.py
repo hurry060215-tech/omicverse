@@ -653,22 +653,6 @@ def sepal(
     graph = _get_graph(adata, connectivity_key)
     _coords(adata, spatial_key)
 
-    graph_prefix = (
-        connectivity_key[:-len('_connectivities')]
-        if connectivity_key.endswith('_connectivities')
-        else connectivity_key
-    )
-    graph_params = adata.uns.get(f"{graph_prefix}_neighbors", {}).get("params", {})
-    if graph_params.get("method") == "spatial" and (
-        int(graph_params.get("n_neighbors", -1)) != max_neighs
-        or graph_params.get("coord_type") != "grid"
-    ):
-        raise ValueError(
-            "sepal requires a lattice graph built with "
-            f"`ov.space.spatial_neighbors(..., n_neighs={max_neighs}, "
-            "coord_type='grid')`."
-        )
-
     if use_raw:
         source = adata.raw
         var_names = list(source.var_names)
@@ -700,6 +684,11 @@ def sepal(
     # from acting as a sink and draining the tissue.
     graph = graph.tocsr()
     degree = np.diff(graph.indptr)
+    if np.any(degree > max_neighs):
+        raise ValueError(
+            f"The graph has spots with more than {max_neighs} neighbours; "
+            "sepal requires a square or hexagonal lattice."
+        )
     sat = np.flatnonzero(degree == max_neighs)
     unsat = np.flatnonzero(degree < max_neighs)
     if sat.size == 0:
