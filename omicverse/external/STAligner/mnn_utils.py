@@ -48,9 +48,11 @@ def create_dictionary_mnn(adata, use_rep, batch_name, k = 50, save_on_disk = Tru
         match = mnn(ds1, ds2, names1, names2, knn=k, save_on_disk = save_on_disk, approx = approx)
 
         G = nx.Graph()
-        G.add_edges_from(sorted(match, key=lambda edge: (str(edge[0]), str(edge[1]))))
-        for anchor in sorted(G.nodes, key=str):
-            mnns[key_name1][anchor] = sorted(G.neighbors(anchor), key=str)
+        G.add_edges_from(match)
+        # Use observation order, not barcode spelling, to order MNN candidates.
+        positions = {name: pos for pos, name in enumerate(cell_names)}
+        for anchor in sorted(G.nodes, key=positions.__getitem__):
+            mnns[key_name1][anchor] = sorted(G.neighbors(anchor), key=positions.__getitem__)
     return(mnns)
 
 def validate_sparse_labels(Y):

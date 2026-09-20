@@ -360,9 +360,9 @@ class pySTAligner(object):
         Batch-pair list for MNN comparison.
     knn_neigh : int, default=100
         K for mutual nearest-neighbor search.
-    mnn_approx : bool or None, default=None
-        Use hnswlib approximate-neighbor search. ``None`` selects it when
-        available and otherwise falls back to exact scikit-learn neighbors.
+    mnn_approx : bool, default=True
+        Use the original hnswlib approximate-neighbor search. Pass False
+        explicitly for exact scikit-learn neighbors.
     Batch_list : list, optional
         Per-batch AnnData list aligned to ``batch_key``.
     device : torch.device, default=auto cuda/cpu
@@ -418,7 +418,7 @@ class pySTAligner(object):
                  knn_neigh: int = 100,
                  Batch_list = None,
                  device = None,
-                 mnn_approx = None,
+                 mnn_approx = True,
                  batch_ids = None,
                  pretrain_epochs = None,
              ) -> None:
@@ -458,9 +458,9 @@ class pySTAligner(object):
             Batch combinations for pairwise alignment.
         knn_neigh : int, default=100
             MNN neighbor count.
-        mnn_approx : bool or None, default=None
-            Whether to use hnswlib approximate neighbors. ``None`` uses it when
-            importable and falls back to exact scikit-learn neighbors.
+        mnn_approx : bool, default=True
+            Use hnswlib approximate neighbors, as in the original method.
+            Pass False explicitly for exact scikit-learn neighbors.
         Batch_list : list or mapping, optional
             Per-batch AnnData objects. A ``{batch_label: AnnData}`` mapping is
             safest when slices share the same Visium barcodes.
@@ -473,8 +473,8 @@ class pySTAligner(object):
             ``batch.obs[batch_key]`` column.
         pretrain_epochs : int, optional
             Number of STAGATE-only epochs before MNN alignment. Defaults to
-            half of ``n_epochs`` (capped at 500), leaving at least half of short
-            runs for actual alignment.
+            500, preserving the original training schedule. Runs of 500 epochs
+            or fewer must explicitly choose a shorter pretraining stage.
 
         Notes:
             - Requires pre-computed spatial networks
@@ -486,7 +486,7 @@ class pySTAligner(object):
             - Named Spatial_Net edges are realigned after row reordering. Graphs
               without named edges require the original Cal_Spatial_Net row order.
             - Every requested batch pair must yield usable MNN anchors, and the
-              pair graph must connect all batches.
+              pair graph may contain separate alignment groups.
             - Memory usage scales with dataset size
             - Consider reducing knn_neigh for large datasets
         """
@@ -522,14 +522,8 @@ class pySTAligner(object):
             Batch_list = list(Batch_list)
         if len(Batch_list) < 2:
             raise ValueError("STAligner requires at least two batches in `Batch_list`.")
-        too_small = [i for i, batch in enumerate(Batch_list) if batch.n_obs < 2]
-        if too_small:
-            raise ValueError(
-                "STAligner triplet training requires at least two observations "
-                f"per batch; too-small batch indices: {too_small}."
-            )
         if pretrain_epochs is None:
-            pretrain_epochs = min(500, max(1, n_epochs // 2))
+            pretrain_epochs = 500
         if (
             isinstance(pretrain_epochs, bool)
             or not isinstance(pretrain_epochs, (int, np.integer))
@@ -537,7 +531,8 @@ class pySTAligner(object):
         ):
             raise ValueError(
                 "`pretrain_epochs` must be an integer satisfying "
-                "1 <= pretrain_epochs < n_epochs."
+                "1 <= pretrain_epochs < n_epochs. The default is 500; "
+                "set pretrain_epochs explicitly for shorter runs."
             )
 
         self.device = torch.device(
@@ -650,23 +645,6 @@ class pySTAligner(object):
                 )
         if len(set(iter_comb)) != len(iter_comb):
             raise ValueError("`iter_comb` must not contain duplicate batch pairs.")
-        reachable = {0}
-        changed = True
-        while changed:
-            changed = False
-            for left, right in iter_comb:
-                if left in reachable and right not in reachable:
-                    reachable.add(right)
-                    changed = True
-                elif right in reachable and left not in reachable:
-                    reachable.add(left)
-                    changed = True
-        if reachable != set(range(len(Batch_list))):
-            raise ValueError(
-                "`iter_comb` must form one connected graph covering every batch; "
-                f"uncovered batch indices: {sorted(set(range(len(Batch_list))) - reachable)}."
-            )
-
         comm_gene = adata.var_names
         data_list = []
         for adata_tmp, adjacency in zip(Batch_list, batch_adjs):
@@ -707,30 +685,15 @@ class pySTAligner(object):
         self.verbose = verbose
         self.iter_comb = iter_comb
         self.knn_neigh = knn_neigh
-        if mnn_approx is None:
+        self.mnn_approx = bool(mnn_approx)
+        if self.mnn_approx:
             try:
                 import hnswlib  # noqa: F401
-            except (ImportError, OSError):
-                self.mnn_approx = False
-                warnings.warn(
-                    "hnswlib is unavailable; STAligner will use exact "
-                    "scikit-learn MNN search. Install hnswlib or pass "
-                    "mnn_approx=False to silence this message.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            else:
-                self.mnn_approx = True
-        else:
-            self.mnn_approx = bool(mnn_approx)
-            if self.mnn_approx:
-                try:
-                    import hnswlib  # noqa: F401
-                except (ImportError, OSError) as exc:
-                    raise ImportError(
-                        "mnn_approx=True requires hnswlib. Install it or use "
-                        "mnn_approx=False for exact neighbor search."
-                    ) from exc
+            except (ImportError, OSError) as exc:
+                raise ImportError(
+                    "mnn_approx=True requires hnswlib. Install it or explicitly "
+                    "use mnn_approx=False for exact neighbor search."
+                ) from exc
         self.Batch_list = Batch_list
         self.batch_key = batch_key
         self._is_fitted = False
@@ -749,6 +712,8 @@ class pySTAligner(object):
             self.model = STAligner(
                 hidden_dims=[adata.X.shape[1], hidden_dims[0], hidden_dims[1]]
             ).to(self.device)
+            # Upstream shuffles after model initialization consumes RNG draws.
+            self._loader_generator.set_state(torch.get_rng_state())
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr,
                                           weight_decay=weight_decay)
 
@@ -787,7 +752,8 @@ class pySTAligner(object):
             - Consider batch size for large datasets
         """
         self._is_fitted = False
-        rng = np.random.default_rng(self.random_seed)
+        # Preserve upstream NumPy sampling without changing global RNG state.
+        rng = np.random.RandomState(self.random_seed)
 
         print('Pretrain with STAGATE...')
         pretrain_epochs = self.pretrain_epochs
@@ -865,13 +831,10 @@ class pySTAligner(object):
                         for anchor in mnn_dict[batch_pair_name].keys():
                             positive_spot = mnn_dict[batch_pair_name][anchor][0]
                             source_cells = cellname_by_batch_dict[batchname_list[anchor]]
-                            negative_candidates = source_cells[source_cells != anchor]
-                            if not len(negative_candidates):
-                                continue
                             anchor_list.append(anchor)
                             positive_list.append(positive_spot)
                             negative_list.append(
-                                negative_candidates[rng.integers(len(negative_candidates))]
+                                source_cells[rng.randint(len(source_cells))]
                             )
 
                     if not anchor_list:

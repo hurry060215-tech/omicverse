@@ -83,7 +83,7 @@ def test_staligner_accepts_anndata_concat_suffixes_and_defaults_to_adjacent_pair
         batch_key="batch",
         Batch_list=batches,
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         mnn_approx=False,
         device="cpu",
     )
@@ -129,7 +129,7 @@ def test_staligner_two_epochs_enters_mnn_alignment(monkeypatch):
         batch_key="batch",
         Batch_list=batches,
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         knn_neigh=100,
         mnn_approx=False,
         device="cpu",
@@ -191,7 +191,7 @@ def test_staligner_requires_explicit_identity_for_shared_visium_barcodes(monkeyp
             combined,
             batch_key="batch",
             Batch_list=[batch_a, batch_b],
-            n_epochs=2,
+            n_epochs=2, pretrain_epochs=1,
             mnn_approx=False,
             device="cpu",
         )
@@ -201,7 +201,7 @@ def test_staligner_requires_explicit_identity_for_shared_visium_barcodes(monkeyp
         batch_key="batch",
         Batch_list={"s0": batch_a, "s1": batch_b},
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         mnn_approx=False,
         device="cpu",
     )
@@ -209,20 +209,14 @@ def test_staligner_requires_explicit_identity_for_shared_visium_barcodes(monkeyp
     np.testing.assert_array_equal(model.data_list[1].x.numpy(), np.asarray(batch_b.X))
 
 
-def test_staligner_rejects_disconnected_custom_pair_graph(monkeypatch):
-    batches = [_batch("a"), _batch("b", 10), _batch("c", 20)]
-    combined = _combined(*batches)
-
-    with pytest.raises(ValueError, match="connected graph.*uncovered"):
-        pySTAligner(
-            combined,
-            batch_key="batch",
-            Batch_list=batches,
-            iter_comb=[(0, 1)],
-            n_epochs=2,
-            mnn_approx=False,
-            device="cpu",
-        )
+def test_staligner_accepts_explicit_separate_alignment_groups():
+    batches = [_batch("a"), _batch("b"), _batch("c"), _batch("d")]
+    model = pySTAligner(
+        _combined(*batches), batch_key="batch", Batch_list=batches,
+        iter_comb=[(0, 1), (2, 3)], n_epochs=2, pretrain_epochs=1,
+        mnn_approx=False, device="cpu",
+    )
+    assert model.iter_comb == [(0, 1), (2, 3)]
 
 
 def test_staligner_seed_controls_model_initialization(monkeypatch):
@@ -237,7 +231,7 @@ def test_staligner_seed_controls_model_initialization(monkeypatch):
         batch_key="batch",
         Batch_list=batches,
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         random_seed=19,
         mnn_approx=False,
         device="cpu",
@@ -270,7 +264,7 @@ def test_staligner_alignment_uses_same_expression_source_as_pretraining(monkeypa
         batch_key="batch",
         Batch_list=batches,
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         mnn_approx=False,
         device="cpu",
     )
@@ -292,7 +286,7 @@ def test_staligner_empty_mnn_cannot_be_reported_as_fitted(monkeypatch):
         batch_key="batch",
         Batch_list=batches,
         hidden_dims=[4, 2],
-        n_epochs=2,
+        n_epochs=2, pretrain_epochs=1,
         mnn_approx=False,
         device="cpu",
     )
@@ -341,17 +335,20 @@ def test_real_staligner_two_stage_cpu_smoke_without_optional_compiled_neighbors(
     batch_b.X = np.asarray(batch_a.X) + np.float32(0.01)
     combined = _combined(batch_a, batch_b)
 
-    with pytest.warns(UserWarning, match="exact scikit-learn"):
-        model = pySTAligner(
-            combined,
-            batch_key="batch",
-            Batch_list=[batch_a, batch_b],
-            hidden_dims=[4, 2],
-            n_epochs=2,
-            knn_neigh=1,
-            device="cpu",
-            random_seed=7,
-        )
+    with pytest.raises(ImportError, match="mnn_approx=True requires hnswlib"):
+        pySTAligner(combined, batch_key="batch", Batch_list=[batch_a, batch_b],
+                    n_epochs=2, pretrain_epochs=1, device="cpu")
+    model = pySTAligner(
+        combined,
+        batch_key="batch",
+        Batch_list=[batch_a, batch_b],
+        hidden_dims=[4, 2],
+        n_epochs=2, pretrain_epochs=1,
+        knn_neigh=1,
+        device="cpu",
+        random_seed=7,
+        mnn_approx=False,
+    )
     model.train()
     result = model.predicted()
 
@@ -360,7 +357,7 @@ def test_real_staligner_two_stage_cpu_smoke_without_optional_compiled_neighbors(
     assert np.isfinite(result.obsm["STAligner"]).all()
 
 
-def test_mnn_dictionary_sorts_anchors_and_positive_neighbors(monkeypatch):
+def test_mnn_dictionary_preserves_observation_order(monkeypatch):
     from omicverse.external.STAligner import mnn_utils
 
     adata = AnnData(
@@ -390,8 +387,8 @@ def test_mnn_dictionary_sorts_anchors_and_positive_neighbors(monkeypatch):
         verbose=0,
     )["a_b"]
 
-    assert list(result) == ["a1", "a2", "b1", "b2"]
-    assert result["b1"] == ["a1", "a2"]
+    assert list(result) == ["a2", "a1", "b2", "b1"]
+    assert result["b1"] == ["a2", "a1"]
 
 
 def test_staligner_preserves_original_positional_arguments():
@@ -399,7 +396,7 @@ def test_staligner_preserves_original_positional_arguments():
     model = pySTAligner(
         _combined(*batches), [4, 2], 2, 0.001, "batch", "STAligner",
         5, 0.0001, 1, False, 666, [(0, 1)], 1, batches, "cpu",
-        mnn_approx=False,
+        mnn_approx=False, pretrain_epochs=1,
     )
     assert model.Batch_list == batches
     assert model.device == torch.device("cpu")
@@ -436,4 +433,55 @@ def test_staligner_distinguishes_numeric_and_string_batch_identity(explicit):
     kwargs = {"batch_ids": ["1", 1]} if explicit else {}
     with pytest.raises(ValueError, match="first-seen order"):
         pySTAligner(combined, batch_key="batch", Batch_list=batches[::-1],
-                    n_epochs=2, mnn_approx=False, device="cpu", **kwargs)
+                    n_epochs=2, pretrain_epochs=1, mnn_approx=False, device="cpu", **kwargs)
+
+
+@pytest.mark.parametrize("epochs", [501, 600, 999, 1000])
+def test_original_pretraining_schedule_is_preserved(epochs):
+    batches = [_batch("a"), _batch("b")]
+    model = pySTAligner(_combined(*batches), batch_key="batch", Batch_list=batches,
+                       n_epochs=epochs, mnn_approx=False, device="cpu")
+    assert model.pretrain_epochs == 500
+
+
+def test_short_training_requires_explicit_schedule():
+    batches = [_batch("a"), _batch("b")]
+    with pytest.raises(ValueError, match="pretrain_epochs"):
+        pySTAligner(_combined(*batches), batch_key="batch", Batch_list=batches,
+                    n_epochs=100, mnn_approx=False, device="cpu")
+
+
+def test_mnn_selected_positive_is_invariant_to_barcode_renaming():
+    from omicverse.external.STAligner.mnn_utils import create_dictionary_mnn
+    adata = AnnData(np.ones((4, 2)), obs=pd.DataFrame(
+        {"batch": ["A", "A", "B", "B"]}, index=["a1", "a2", "b1", "b2"]))
+    adata.obsm["z"] = np.array([[0., 0.], [1., 0.], [.1, 0.], [.9, 0.]])
+    def selected_rows(data):
+        pairs = create_dictionary_mnn(data, "z", "batch", k=2, approx=False, verbose=0)["A_B"]
+        return [(data.obs_names.get_loc(a), data.obs_names.get_loc(p[0])) for a, p in pairs.items()]
+    before = selected_rows(adata)
+    adata.obs_names = ["a1", "a2", "z", "b"]
+    assert selected_rows(adata) == before
+
+
+def test_triplet_negative_draws_match_upstream_numpy_sampling(monkeypatch):
+    batches = [_batch("a"), _batch("b")]
+    combined = _combined(*batches)
+    names = list(combined.obs_names)
+    matches = {name: [names[3] if i < 3 else names[0]] for i, name in enumerate(names)}
+    monkeypatch.setattr(_integrate, "_get_staligner_backend",
+                        lambda: (_TinySTAligner, lambda *args, **kwargs: {"pair": matches}))
+    captured = []
+    original_loader = _integrate.DataLoader
+    def capture_loader(data, *args, **kwargs):
+        captured.extend(item for item in data if "negative_ind" in item)
+        return original_loader(data, *args, **kwargs)
+    monkeypatch.setattr(_integrate, "DataLoader", capture_loader)
+    model = pySTAligner(combined, batch_key="batch", Batch_list=batches,
+                       hidden_dims=[4, 2], n_epochs=2, pretrain_epochs=1,
+                       random_seed=7, mnn_approx=False, device="cpu")
+    model.train()
+    reference_rng = np.random.RandomState(7)
+    expected = [reference_rng.randint(3) + (0 if i < 3 else 3) for i in range(6)]
+    assert captured[0].negative_ind.tolist() == expected
+    assert any(i == negative for i, negative in enumerate(expected))
