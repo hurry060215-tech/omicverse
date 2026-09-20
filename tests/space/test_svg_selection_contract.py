@@ -195,13 +195,12 @@ def test_single_library_matches_esda_reference(mode):
         ref = esda.Moran(values, w, permutations=0, two_tailed=False) if mode == 'moran' else esda.Geary(values, w, permutations=0)
         np.testing.assert_allclose(ours.loc[gene, 'I' if mode == 'moran' else 'C'], ref.I if mode == 'moran' else ref.C, rtol=1e-10)
         from scipy.stats import norm
-        # ESDA chooses a one-sided tail based on the observed sign; OV tests
-        # positive spatial clustering (Moran upper tail / Geary lower tail).
-        expected_p = norm.sf(ref.z_norm) if mode == 'moran' else norm.cdf(ref.z_norm)
+        # Match ESDA/Squidpy's smaller-tail analytical probability.
+        expected_p = norm.sf(abs(ref.z_norm))
         np.testing.assert_allclose(ours.loc[gene, 'pval_norm'], expected_p, rtol=1e-8, atol=1e-12)
 
 
-def test_multilibrary_statistics_equal_separate_runs_with_joint_bh(tmp_path):
+def test_multilibrary_statistics_equal_separate_runs_including_qvalues(tmp_path):
     import anndata as ad
     a, b = lattice(1), lattice(2)
     b.X += 100
@@ -211,8 +210,7 @@ def test_multilibrary_statistics_equal_separate_runs_with_joint_bh(tmp_path):
     for name, original in [('a', a), ('b', b)]:
         reference = spatial_autocorr(original, copy=True).reindex(original.var_names)
         np.testing.assert_allclose(result[result.library == name].set_index('gene').reindex(original.var_names)['I'], reference['I'], equal_nan=True)
-    valid = result.pval_norm.notna()
-    np.testing.assert_allclose(result.loc[valid, 'pval_adj'], multipletests(result.loc[valid, 'pval_norm'], method='fdr_bh')[1])
+        np.testing.assert_allclose(result[result.library == name].set_index('gene').reindex(original.var_names)['pval_adj'], reference['pval_adj'], equal_nan=True)
     combined.uns['moranI'] = result
     combined.write_h5ad(tmp_path / 'stats.h5ad')
 
@@ -515,3 +513,63 @@ def test_sepal_rejects_overconnected_graph_without_metadata():
     adata.obsp["spatial_connectivities"] = sparse.csr_matrix(np.ones((6, 6)) - np.eye(6))
     with pytest.raises(ValueError, match="more than 4 neighbours"):
         sepal(adata, max_neighs=4, copy=True)
+
+
+@pytest.mark.parametrize("mode", ["moran", "geary"])
+@pytest.mark.parametrize("n_perms", [None, 39])
+@pytest.mark.parametrize("two_tailed", [False, True])
+def test_statistics_match_squidpy_183(mode, n_perms, two_tailed):
+    import importlib.metadata
+    squidpy = pytest.importorskip("squidpy")
+    if importlib.metadata.version("squidpy") != "1.8.3":
+        pytest.skip("Reference contract is pinned to Squidpy 1.8.3")
+    data = lattice()[:, ['gradient', 'noise']].copy()
+    ours = spatial_autocorr(data, mode=mode, n_perms=n_perms,
+                           two_tailed=two_tailed, seed=42, copy=True)
+    ref = squidpy.gr.spatial_autocorr(
+        data, genes=data.var_names.tolist(), mode=mode, n_perms=n_perms,
+        two_tailed=two_tailed, seed=42, copy=True, n_jobs=1,
+        show_progress_bar=False, use_raw=False)
+    ref = ref.reindex(ours.index)
+    columns = ['I' if mode == 'moran' else 'C', 'pval_norm']
+    if n_perms is not None:
+        columns += ['pval_sim', 'pval_z_sim']
+    np.testing.assert_allclose(ours[columns], ref[columns], rtol=1e-10, atol=1e-12)
+    qcol = ('pval_sim' if n_perms is not None else 'pval_norm') + '_fdr_bh'
+    np.testing.assert_allclose(ours.pval_adj, ref[qcol], rtol=1e-10, atol=1e-12)
+    assert set(ours.index[ours.pval_adj < .05]) == set(ref.index[ref[qcol] < .05])
+
+
+def test_multilibrary_svg_keeps_independent_backend_selections():
+    import anndata as ad
+    a, b = lattice(1), lattice(2)
+    separate = []
+    for data in (a, b):
+        svg(data, mode='moran', n_svgs=2)
+        separate.append(data.var.copy())
+    joined = ad.concat([a, b], label='slice', keys=['a', 'b'], index_unique='-')
+    svg(joined, mode='moran', library_key='slice', n_svgs=2)
+    for label, ref in zip(['a', 'b'], separate):
+        table = joined.uns['spatial_features_by_library']
+        table = table[table.library == label].set_index('gene').reindex(joined.var_names)
+        np.testing.assert_allclose(table.qvalue, ref.pval_adj, equal_nan=True)
+        np.testing.assert_array_equal(table.selected, ref.space_variable_features)
+
+
+@pytest.mark.parametrize("mode", ["somde", "spatialde"])
+def test_multilibrary_preserves_backend_native_qvalues(mode, monkeypatch):
+    data = AnnData(np.ones((8, 2)), obs=pd.DataFrame(
+        {"slice": ["a"] * 4 + ["b"] * 4}, index=[f"c{i}" for i in range(8)]))
+    def backend_result(subset, **kwargs):
+        subset.var[f"{mode}_LLR"] = [2., 1.]
+        subset.var[f"{mode}_pval"] = [.0001, .0002]
+        # Deliberately distinct from recomputed BH values: preserve the backend.
+        subset.var[f"{mode}_qval"] = [.01, .8]
+        subset.var['space_variable_features'] = [True, False]
+        return subset
+    monkeypatch.setattr(svg_module, 'svg', backend_result)
+    result = svg_module._svg_multiple_libraries(
+        data, mode, 2, 500000, 'visium', 'MT-', 'slice', 'significant', {})
+    table = result.uns['spatial_features_by_library']
+    np.testing.assert_array_equal(table.qvalue, [.01, .8, .01, .8])
+    np.testing.assert_array_equal(table.selected, [True, False, True, False])

@@ -45,6 +45,7 @@ def _autocorr_library_subset(adata, indices):
 
 def _svg_multiple_libraries(adata, mode, n_svgs, target_sum, platform,
                             mt_startwith, library_key, selection, kwargs):
+    """Run the selected method per library without changing its correction family."""
     import pandas as pd
     if mode not in ('moran', 'morani', 'somde', 'spatialde'):
         raise ValueError('Multi-library SVG currently supports Moran, SOMDE and SpatialDE; run other methods per library.')
@@ -53,46 +54,35 @@ def _svg_multiple_libraries(adata, mode, n_svgs, target_sum, platform,
     if len(libraries) != adata.obs[library_key].nunique():
         raise ValueError('Library labels collide after conversion to strings.')
     frames = []
+    masks = pd.DataFrame(False, index=adata.var_names, columns=libraries)
     for library in libraries:
         subset = adata[labels == library].copy()
         subset.uns.pop('spatial', None)
         if subset.n_obs < 4:
-            frame = pd.DataFrame({'gene': subset.var_names, 'statistic': np.nan, 'pvalue': np.nan})
+            frame = pd.DataFrame({'gene': subset.var_names, 'statistic': np.nan,
+                                  'pvalue': np.nan, 'qvalue': np.nan, 'selected': False})
         else:
             svg(subset, mode=mode, n_svgs=n_svgs, target_sum=target_sum, platform=platform,
-                mt_startwith=mt_startwith, selection='top_n', **kwargs)
-            stat, pval = (('moranI', 'moranI_pval') if mode in ('moran', 'morani')
-                          else (f'{mode}_LLR', f'{mode}_pval'))
-            if stat not in subset.var or pval not in subset.var:
-                raise ValueError(f'{mode} backend did not provide raw statistics/p-values for global adjustment.')
+                mt_startwith=mt_startwith, selection=selection, **kwargs)
+            stat, pval, qval = (('moranI', 'moranI_pval', 'pval_adj') if mode in ('moran', 'morani')
+                                else (f'{mode}_LLR', f'{mode}_pval', f'{mode}_qval'))
             frame = pd.DataFrame({'gene': subset.var_names,
-                                   'statistic': subset.var[stat].to_numpy(),
-                                   'pvalue': subset.var[pval].to_numpy()})
+                                  'statistic': subset.var[stat].to_numpy(),
+                                  'pvalue': subset.var[pval].to_numpy(),
+                                  'qvalue': subset.var[qval].to_numpy(),
+                                  'selected': subset.var['space_variable_features'].to_numpy()})
+            masks[library] = subset.var['space_variable_features'].reindex(adata.var_names)
         frame.insert(0, 'library', library)
         frames.append(frame)
     table = pd.concat(frames, ignore_index=True)
-    table['qvalue'] = _adjust_testable_pvalues(table['pvalue'])
     table['testable'] = np.isfinite(table['pvalue']) & np.isfinite(table['statistic'])
-    table['selected'] = False
-    masks = pd.DataFrame(False, index=adata.var_names, columns=libraries)
-    for library in libraries:
-        eligible = table[(table.library == library) & table.testable]
-        if selection == 'significant':
-            eligible = eligible[eligible.qvalue < kwargs.get('qval_threshold', 0.05)]
-            if mode in ('moran', 'morani'):
-                eligible = eligible[eligible.statistic > 0]
-        eligible = eligible.sort_values('statistic', ascending=False, kind='stable')
-        if n_svgs is not None:
-            eligible = eligible.head(n_svgs)
-        table.loc[eligible.index, 'selected'] = True
-        masks.loc[eligible.gene, library] = True
     table.index = table.index.astype(str)
     adata.uns['spatial_features_by_library'] = table
     adata.varm['space_variable_features_by_library'] = masks
     adata.var['space_variable_features'] = masks.any(axis=1)
     adata.var['highly_variable'] = adata.var['space_variable_features']
     adata.uns['space_svg_selection'] = {'method': mode, 'selection': selection,
-        'correction_family': 'all_testable_library_gene_pairs', 'correction_method': 'fdr_bh',
+        'correction_family': 'within_each_library', 'correction_method': 'backend_native',
         'global_mask': 'union_of_per_library_selected_candidates', 'library_key': library_key,
         'n_svgs_scope': 'per_library'}
     return adata
@@ -103,54 +93,28 @@ def _svg_multiple_libraries(adata, mode, n_svgs, target_sum, platform,
 # ---------------------------------------------------------------------------
 
 def _moran_i_scores(g, vals):
-    """Compute Moran's I for each gene column in *vals*.
-
-    Parameters
-    ----------
-    g : sparse (n, n) weight matrix (possibly row-normalised)
-    vals : ndarray (n, n_genes)
-
-    Returns
-    -------
-    scores : ndarray (n_genes,)
-    """
-    n = vals.shape[0]
-    s0 = float(g.sum())
-    x_dev = vals - vals.mean(axis=0, keepdims=True)   # (n, n_genes)
-    g_x = g @ x_dev                                    # (n, n_genes)
-    numerator   = (x_dev * g_x).sum(axis=0)
-    denominator = (x_dev ** 2).sum(axis=0)
-    return (n / s0) * numerator / np.maximum(denominator, 1e-15)
+    """Use Scanpy's Moran kernel, as Squidpy does (genes by observations)."""
+    return sc.metrics.morans_i(g, vals.T)
 
 
 def _geary_c_scores(g, vals):
-    """Compute Geary's C for each gene column in *vals*."""
-    n = vals.shape[0]
-    s0 = float(g.sum())
-    row_sums = np.asarray(g.sum(axis=1)).ravel()
-    col_sums = np.asarray(g.sum(axis=0)).ravel()
-    x2       = vals ** 2
-    term1    = (row_sums + col_sums) @ x2
-    term2    = 2.0 * (vals * (g @ vals)).sum(axis=0)
-    numerator   = term1 - term2
-    mean        = vals.mean(axis=0, keepdims=True)
-    denominator = ((vals - mean) ** 2).sum(axis=0)
-    return ((n - 1) / (2.0 * s0)) * numerator / np.maximum(denominator, 1e-15)
+    """Use Scanpy's Geary kernel, including asymmetric permutation weights."""
+    return sc.metrics.gearys_c(g, vals.T)
 
 
 def _analytic_pval(scores, g, mode, n, two_tailed):
     """Analytical p-values under the normal approximation."""
     from scipy import stats
 
-    s0  = float(g.sum())
+    s0  = g.sum()
     g_sym = g + g.T
     if _sp.issparse(g_sym):
-        s1 = 0.5 * float(g_sym.multiply(g_sym).sum())
+        s1 = g_sym.multiply(g_sym).sum() / 2.0
     else:
-        s1 = 0.5 * float((g_sym ** 2).sum())
+        s1 = (g_sym ** 2).sum() / 2.0
     row_sums = np.asarray(g.sum(axis=1)).ravel()
     col_sums = np.asarray(g.sum(axis=0)).ravel()
-    s2  = float(np.sum((row_sums + col_sums) ** 2))
+    s2  = np.sum((row_sums + col_sums) ** 2)
     s02 = s0 ** 2
 
     if mode == 'moran':
@@ -158,15 +122,15 @@ def _analytic_pval(scores, g, mode, n, two_tailed):
         v_num  = n ** 2 * s1 - n * s2 + 3 * s02
         v_den  = (n - 1) * (n + 1) * s02
         var_sc = v_num / v_den - expected ** 2
-        z = (scores - expected) / np.sqrt(np.maximum(var_sc, 1e-15))
-        pvals = stats.norm.sf(np.abs(z)) * 2 if two_tailed else stats.norm.sf(z)
+        z = (scores - expected) / np.sqrt(var_sc)
+        pvals = stats.norm.sf(np.abs(z)) * (2 if two_tailed else 1)
     else:  # geary
         expected = 1.0
         v_num  = (2 * s1 + s2) * (n - 1) - 4 * s02
         v_den  = 2 * (n + 1) * s02
         var_sc = v_num / v_den
-        z = (scores - expected) / np.sqrt(np.maximum(var_sc, 1e-15))
-        pvals = stats.norm.sf(np.abs(z)) * 2 if two_tailed else stats.norm.cdf(z)
+        z = (scores - expected) / np.sqrt(var_sc)
+        pvals = stats.norm.sf(np.abs(z)) * (2 if two_tailed else 1)
 
     return pvals
 
@@ -491,16 +455,19 @@ def spatial_autocorr(
         transformation: Row-normalise the connectivity matrix before scoring. Default: True.
         n_perms: Number of label-permutation iterations for empirical p-values.
             ``None`` uses only the analytical p-value. Default: None.
-        two_tailed: Use two-tailed test for the normal-approximation z-score. Default: False.
+        two_tailed: Double the analytical smaller-tail probability, as in Squidpy
+            1.8.3. Permutation probabilities use its smaller-tail convention
+            regardless of this flag. Default: False.
         corr_method: Multiple-testing correction method passed to
             ``statsmodels.stats.multitest.multipletests`` (e.g. ``'fdr_bh'``). Default: 'fdr_bh'.
         layer: Expression layer to use.  ``None`` uses ``adata.X``. Default: None.
         seed: Random seed for permutation testing. Default: None.
         copy: Return the result DataFrame instead of (also) storing it in ``adata.uns``. Default: False.
-        n_jobs: Reserved for future parallel permutation support. Default: 1.
+        n_jobs: Reserved; permutations follow the Squidpy 1.8.3 serial
+            (n_jobs=1) seed stream. Default: 1.
         library_key: Column identifying independent libraries. Multiple libraries
             are tested separately and returned as a long table with library/gene
-            columns, with correction across all testable library-gene pairs.
+            columns, with correction within each library, matching separate calls.
             Constant genes and slices with fewer than four spots or no edges are
             untestable (NaN statistics/p-values), not evidence of significance.
 
@@ -555,7 +522,7 @@ def spatial_autocorr(
                 indices = np.flatnonzero(labels == library)
                 result = spatial_autocorr(
                     _autocorr_library_subset(adata, indices), genes=genes, mode=mode, transformation=transformation,
-                    n_perms=n_perms, two_tailed=two_tailed, corr_method=None, layer=layer,
+                    n_perms=n_perms, two_tailed=two_tailed, corr_method=corr_method, layer=layer,
                     seed=seed, copy=True, n_jobs=n_jobs,
                     _connectivity=graph[indices][:, indices],
                 )
@@ -563,9 +530,6 @@ def spatial_autocorr(
                 result.insert(0, 'library', library)
                 frames.append(result.reset_index(drop=True))
             result = pd.concat(frames, ignore_index=True)
-            if corr_method is not None:
-                result['pval_adj'] = _adjust_testable_pvalues(
-                    result['pval_sim' if n_perms is not None else 'pval_norm'], corr_method)
             result.index = result.index.astype(str)
             if not copy:
                 adata.uns['moranI' if mode == 'moran' else 'gearyC'] = result
@@ -576,7 +540,7 @@ def spatial_autocorr(
             "The spatial connectivity matrix must have shape "
             f"({adata.n_obs}, {adata.n_obs}); got {source_graph.shape}."
         )
-    g = source_graph.astype(np.float64).copy()
+    g = source_graph.copy()
     if transformation:
         g = normalize(g, norm='l1', axis=1)
 
@@ -636,28 +600,22 @@ def spatial_autocorr(
         perm_scores = np.empty((n_perms, len(genes)))
         for i in range(n_perms):
             perm_idx = rng.permutation(n)
-            v_perm   = vals[perm_idx]
+            g_perm = g[perm_idx, :]
             perm_scores[i] = (
-                _moran_i_scores(g, v_perm) if mode == 'moran'
-                else _geary_c_scores(g, v_perm)
+                _moran_i_scores(g_perm, vals) if mode == 'moran'
+                else _geary_c_scores(g_perm, vals)
             )
-        if two_tailed:
-            expected = -1.0 / (n - 1) if mode == 'moran' else 1.0
-            exceedances = np.sum(
-                np.abs(perm_scores - expected) >= np.abs(scores - expected)[np.newaxis, :], axis=0
-            )
-        elif mode == 'moran':
-            exceedances = np.sum(perm_scores >= scores[np.newaxis, :], axis=0)
-        else:
-            exceedances = np.sum(perm_scores <= scores[np.newaxis, :], axis=0)
+        # Squidpy 1.8.3 uses the smaller empirical tail; two_tailed only
+        # affects the analytical normal approximation in that API.
+        exceedances = np.sum(perm_scores >= scores[np.newaxis, :], axis=0)
+        exceedances = np.minimum(exceedances, n_perms - exceedances)
         df['pval_sim'] = (exceedances + 1.0) / (n_perms + 1.0)
         perm_std = perm_scores.std(axis=0)
         df['z_sim'] = (
-            (scores - perm_scores.mean(axis=0)) / np.maximum(perm_std, 1e-10)
+            (scores - perm_scores.mean(axis=0)) / perm_std
         )
         from scipy.stats import norm
-        df['pval_z_sim'] = (2 * norm.sf(np.abs(df['z_sim'])) if two_tailed
-                            else norm.sf(df['z_sim']) if mode == 'moran' else norm.cdf(df['z_sim']))
+        df['pval_z_sim'] = norm.sf(np.abs(df['z_sim']))
 
     df.loc[~testable, [col for col in df if col != 'testable']] = np.nan
     # ---- multiple-testing correction ---------------------------------
@@ -845,8 +803,8 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
     selection : {'significant', 'top_n'}, default='significant'
         For Moran, SOMDE and SpatialDE, select significant genes before applying
         the count cap. Use top_n explicitly for the legacy ranked prefilter.
-        Multiple libraries are tested separately with BH across all testable
-        library-gene pairs; the global mask is a union of selected candidates.
+        Multiple libraries retain separate backend tests, q-values and selections;
+        the global mask is the union of their selected candidates.
     n_svgs : int, default=3000
         Maximum number of genes to select. Significance-based methods may return
         fewer when fewer genes pass ``qval_threshold``.
@@ -857,10 +815,9 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
     mt_startwith : str, default='MT-'
         Mitochondrial gene prefix excluded by default.
     library_key : str or None, default=None
-        Observation column identifying independent slides when ``mode='moran'``.
-        The automatically constructed spatial graph is then block-diagonal by
-        library, so overlapping local coordinate systems cannot create
-        cross-slide edges.
+        Observation column identifying independent slides for Moran, SOMDE or
+        SpatialDE. Each slide is tested separately, so overlapping coordinate
+        systems cannot create cross-slide edges or pooled tests.
     **kwargs
         Additional method-specific options.
         For ``somde``: ``k``, ``qval_threshold``, ``retrain_epoch``.
@@ -876,15 +833,15 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
 
     Notes:
         - Moran defaults to the analytical normal approximation (n_perms=None).
-          Explicit positive n_perms enables expression-row permutations. Their
+          Explicit positive n_perms enables Squidpy 1.8.3 graph-row permutations. Their
           minimum p-value is 1/(n_perms+1); choose a budget appropriate for the
           number of tested genes and the desired FDR threshold.
-        - Moran tests positive spatial autocorrelation by default. Its permutation
-          null shuffles expression rows, not graph rows; these conventions do not
-          imply Squidpy p-value equivalence.
-        - Multiple libraries use BH correction across all testable library-gene
-          pairs and a union of per-library selections, rather than independent
-          per-library correction.
+        - Autocorrelation statistics and tail conventions follow Squidpy 1.8.3
+          with n_jobs=1. SVG significance selection additionally requires positive
+          Moran's I. Constant genes are excluded from the testable family.
+        - Independent libraries retain each backend's per-library q-values and
+          selections. The global mask is their union; adding another library does
+          not change the first library's significance results.
         - PROST mode requires opencv-python package
         - Different modes use different statistical approaches:
             - PROST: Pattern recognition and spatial autocorrelation
