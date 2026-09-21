@@ -7,18 +7,15 @@ from torch import Tensor
 import torch.nn.functional as F
 from torch.nn import Parameter
 import torch.nn as nn
-# from torch_sparse import SparseTensor, set_diag
 from torch_geometric.nn.dense.linear import Linear
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import remove_self_loops, add_self_loops, softmax
 
 try:
     from torch_sparse import SparseTensor, set_diag
-    _TORCH_SPARSE_IMPORT_ERROR = None
-except (ImportError, OSError) as exc:
+except (ImportError, OSError):
     SparseTensor = None
     set_diag = None
-    _TORCH_SPARSE_IMPORT_ERROR = exc
 
 class GATConv(MessagePassing):
     r"""The graph attentional operator from the `"Graph Attention Networks"
@@ -175,7 +172,7 @@ class GATConv(MessagePassing):
             raise ImportError(
                 "SparseTensor STAligner inputs require `torch-sparse`; ordinary "
                 "edge_index Tensor inputs do not."
-            ) from _TORCH_SPARSE_IMPORT_ERROR
+            )
 
         if self.add_self_loops:
             if isinstance(edge_index, Tensor):
