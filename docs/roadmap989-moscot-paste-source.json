@@ -1,0 +1,25 @@
+{
+  "upstream_commit": "5f0d58c67c7ad2b51ccdf67bad3c31df761fd9bc",
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/raphael-group/paste/5f0d58c67c7ad2b51ccdf67bad3c31df761fd9bc/sample_data/slice1.csv",
+      "bytes": 4124611,
+      "sha256": "f7e8e1b37be579b66b63f1541055c1df5380e87e993d8cbc4e6fda457dc16002"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/raphael-group/paste/5f0d58c67c7ad2b51ccdf67bad3c31df761fd9bc/sample_data/slice1_coor.csv",
+      "bytes": 12700,
+      "sha256": "77647774caeb6b03bc481a76d97e1b6117d722a8ddfcf192625cc30a8144ed88"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/raphael-group/paste/5f0d58c67c7ad2b51ccdf67bad3c31df761fd9bc/sample_data/slice2.csv",
+      "bytes": 3931425,
+      "sha256": "c6c44953348db76aba7120d189834a6c55cb5fa4351c83b6a6b88d6b4b4ccadc"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/raphael-group/paste/5f0d58c67c7ad2b51ccdf67bad3c31df761fd9bc/sample_data/slice2_coor.csv",
+      "bytes": 12550,
+      "sha256": "5eb5f4ca0ccd274a1b30caec877ae02b10cee2f1a21ed0c218d254a42dfa53d4"
+    }
+  ]
+}

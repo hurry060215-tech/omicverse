@@ -1,0 +1,60 @@
+{
+  "profiles": [
+    {
+      "status": "failed_native_nonconvergence",
+      "configuration": {
+        "alpha": 0.5,
+        "rank": 64,
+        "epsilon": 0.05,
+        "threshold": 1e-05,
+        "max_iterations": 1000,
+        "batch_size": 512
+      },
+      "reference_n": 26431,
+      "spatial_n": 7750,
+      "training_genes_n": 201,
+      "heldout_genes_n": 51,
+      "pca": {
+        "n_components": 30,
+        "svd_solver": "full",
+        "input": "training markers only"
+      },
+      "result": "Native low-rank GW returned converged=False; stopped before OV invocation. Not an accepted mapping. Native backend recommended epsilon=0; separate profile follows.",
+      "log": "quadratic.log",
+      "native_converged": false,
+      "ov_solve_started": false,
+      "elapsed_seconds_approx": 72,
+      "elapsed_note": "Approximate whole-process wall time from tool command dispatch to terminal log timestamp; no in-process timer survived assertion.",
+      "terminal_log_utc": "2026-10-31T17:55:10Z"
+    },
+    {
+      "status": "failed_native_nonconvergence",
+      "configuration": {
+        "alpha": 0.5,
+        "rank": 64,
+        "epsilon": 0,
+        "threshold": 1e-05,
+        "max_iterations": 1000,
+        "batch_size": 512
+      },
+      "reference_n": 26431,
+      "spatial_n": 7750,
+      "training_genes_n": 201,
+      "heldout_genes_n": 51,
+      "pca": {
+        "n_components": 30,
+        "svd_solver": "full",
+        "input": "training markers only"
+      },
+      "result": "Native low-rank GW returned converged=False at strict1e-5 threshold within1000iteration budget; stopped before OV invocation. No OV quadratic parity or H5AD output was produced. Real-data quadratic mapping remains unvalidated.",
+      "log": "quadratic-eps0.log",
+      "native_converged": false,
+      "ov_solve_started": false,
+      "elapsed_seconds_approx": 200,
+      "elapsed_note": "Approximate whole-process wall time from tool command dispatch to terminal log timestamp; no in-process timer survived assertion.",
+      "terminal_log_utc": "2026-10-31T17:58:41Z"
+    }
+  ],
+  "linear_mapping_status": "passed; separate receipt",
+  "scope": "These are native solver nonconvergence observations on the documented real inputs, not evidence of an OV wrapper defect or algorithm-wide failure. No threshold relaxation, no hidden failed-run omission."
+}

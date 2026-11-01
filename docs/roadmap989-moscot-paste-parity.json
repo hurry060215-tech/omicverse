@@ -1,0 +1,74 @@
+{
+  "raw_shapes": {
+    "slice1": [
+      254,
+      7998
+    ],
+    "slice2": [
+      251,
+      7713
+    ]
+  },
+  "processed_shape": [
+    504,
+    7224
+  ],
+  "qc": {
+    "min_gene_counts": 15,
+    "min_cell_counts": 100,
+    "join": "shared_genes",
+    "normalization_target": 10000,
+    "pca_components": 30,
+    "random_seed": 0
+  },
+  "solve_kwargs": {
+    "alpha": 0.5,
+    "epsilon": 0.05,
+    "threshold": 1e-05,
+    "max_iterations": 500
+  },
+  "couplings": [
+    {
+      "key": [
+        "slice1",
+        "slice2"
+      ],
+      "shape": [
+        254,
+        250
+      ],
+      "converged": true,
+      "mass": 0.9999995231628418,
+      "native_max_abs": 0.0
+    }
+  ],
+  "alignments": [
+    {
+      "mode": "warp",
+      "native_max_abs": 0.0,
+      "save_reload": true
+    },
+    {
+      "mode": "affine",
+      "native_max_abs": 0.0,
+      "save_reload": true
+    }
+  ],
+  "expression_and_physical_coordinates_unchanged": true,
+  "coordinate_identity": "author-provided paired CSV row order; coordinates have no independent barcode column",
+  "input_sha256": {
+    "slice1.csv": "f7e8e1b37be579b66b63f1541055c1df5380e87e993d8cbc4e6fda457dc16002",
+    "slice1_coor.csv": "77647774caeb6b03bc481a76d97e1b6117d722a8ddfcf192625cc30a8144ed88",
+    "slice2.csv": "c6c44953348db76aba7120d189834a6c55cb5fa4351c83b6a6b88d6b4b4ccadc",
+    "slice2_coor.csv": "5eb5f4ca0ccd274a1b30caec877ae02b10cee2f1a21ed0c218d254a42dfa53d4"
+  },
+  "scope": "Full two author-provided real slices; native numerical/software acceptance, not anatomical ground truth",
+  "versions": {
+    "moscot": "0.5.2",
+    "anndata": "0.12.19",
+    "scanpy": "1.12.5",
+    "numpy": "2.5.4",
+    "jax": "0.12.0.1",
+    "ott-jax": "0.6.0"
+  }
+}

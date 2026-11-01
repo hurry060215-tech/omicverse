@@ -61,6 +61,7 @@ Examples:
 
 from .._optional import bind_optional_symbols
 
+from .._moscot import moscot_alignment, moscot_mapping
 from ._tangram import Tangram
 from ._spatrio import CellMap,CellLoc
 from ._stt import STT
@@ -212,3 +213,7 @@ __all__ = [
     'geom',
     'seg',
 ]
+
+from .._moscot_results import moscot_coupling, moscot_align_coordinates, moscot_impute
+__all__ += ['moscot_coupling', 'moscot_align_coordinates', 'moscot_impute']
+__all__ += ['moscot_mapping', 'moscot_alignment']
