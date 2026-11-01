@@ -71,6 +71,8 @@ def send_analytics(analytics_id, event_type='report_view', **kwargs):
     - 标准版：9个基础字段
     - 完整版：17个字段，包含详细地理信息(城市、ISP、坐标等)
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     
     # 基础数据收集
     user_hash = generate_user_hash()
@@ -157,6 +159,8 @@ def send_analytics_simple(analytics_id):
     - 项目ID、用户hash、时间戳
     - 平台信息、用户代理、语言、时区、国家
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     return send_analytics(analytics_id)
 
 
@@ -173,6 +177,8 @@ def send_analytics_detailed(analytics_id, project_name=None, user_note=None):
     user_note : str
         用户备注
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     extra_data = {}
     if project_name:
         extra_data['project_name'] = project_name
@@ -203,6 +209,8 @@ def send_analytics_full(analytics_id, event_type='report_view', **kwargs):
     -----
     使用与ip-api.com完全一致的字段名称和数据结构
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     
     # 基础数据收集
     user_hash = generate_user_hash()
@@ -312,6 +320,8 @@ def test_analytics_connection():
     """
     测试与analytics服务器的连接
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     print("🧪 测试Analytics服务器连接...")
     
     # 测试健康检查端点
@@ -367,6 +377,8 @@ def send_analytics_silent(analytics_id, event_type='report_view', **kwargs):
     -----
     与send_analytics功能完全相同，但不输出任何调试信息
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     
     try:
         # 基础数据收集
@@ -432,6 +444,8 @@ def send_analytics_full_silent(analytics_id, event_type='report_view', **kwargs)
     -----
     与send_analytics_full功能完全相同，但不输出任何调试信息
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     
     try:
         # 基础数据收集
@@ -506,5 +520,7 @@ def send_analytics_simple_silent(analytics_id):
     --------
     bool : 发送是否成功
     """
+    if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() in {"1", "true", "yes", "on"}:
+        return False
     return send_analytics_silent(analytics_id)
 

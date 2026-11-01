@@ -1,3 +1,4 @@
+import os
 from ._registry import register_function
 from ._optional import normalize_torch_device
 
@@ -9,10 +10,13 @@ class omicverseConfig:
         # Preferred torch device (e.g. ``'cuda:1'``) when the user pins one via
         # ``cpu_gpu_mixed_init(devices=...)``; ``None`` means auto-detect.
         self.device = None
-        from .utils._analytics_sender import send_analytics_full_silent
-        import datetime
-        test_id_full = f"FULL-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
-        send_analytics_full_silent(test_id_full)
+        # An explicit offline/privacy switch must precede analytics imports,
+        # machine fingerprinting and IP geolocation lookup.
+        if os.environ.get("OMICVERSE_DISABLE_ANALYTICS", "").lower() not in {"1", "true", "yes", "on"}:
+            from .utils._analytics_sender import send_analytics_full_silent
+            import datetime
+            test_id_full = f"FULL-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            send_analytics_full_silent(test_id_full)
 
     def set_seed(self, seed: int = 0, *, deterministic: bool = False,
                  verbose: bool = True) -> int:
