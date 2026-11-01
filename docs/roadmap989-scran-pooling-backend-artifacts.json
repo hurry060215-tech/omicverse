@@ -4,27 +4,48 @@
     {
       "filename": "ashr_py-0.1.0.dev0+limpa.3-py3-none-any.whl",
       "sha256": "cfa4cf41d5f35967cbba0df492001675b98b5e581eb7d8a22b732883c765397b",
-      "bytes": 136736
+      "bytes": 136736,
+      "archive_relative_path": [
+        "artifacts/dependencies/ashr_py-0.1.0.dev0+limpa.3-py3-none-any.whl"
+      ],
+      "role": "required reviewed dependency"
     },
     {
       "filename": "pyedger-0.2.1+limpa.3-py3-none-any.whl",
       "sha256": "0577937c38087855b2b3d9a1b09cdfa6a0a3582c5e96aa978374c994288b09ad",
-      "bytes": 107318
+      "bytes": 107318,
+      "archive_relative_path": [
+        "artifacts/dependencies/pyedger-0.2.1+limpa.3-py3-none-any.whl"
+      ],
+      "role": "required reviewed dependency"
     },
     {
       "filename": "pylimma-0.2.0+limpa.3-py3-none-any.whl",
       "sha256": "4ae6799d9ee0d70f1bf4ff6a0b834c904e88564c09a377fcc1eb9d3ee870bb90",
-      "bytes": 230543
+      "bytes": 230543,
+      "archive_relative_path": [
+        "artifacts/dependencies/pylimma-0.2.0+limpa.3-py3-none-any.whl"
+      ],
+      "role": "required reviewed dependency"
     },
     {
       "filename": "scran_pooling_py-0.1.0.dev0-py3-none-any.whl",
       "sha256": "ed81f6615c7c02b48f26e1167c33ed36eb9230cae560c618f4aa878258de8741",
-      "bytes": 42986
+      "bytes": 42986,
+      "archive_relative_path": [
+        "artifacts/direct-wheel/scran_pooling_py-0.1.0.dev0-py3-none-any.whl"
+      ],
+      "role": "alternative build of same backend; install exactly one backend wheel"
     },
     {
       "filename": "scran_pooling_py-0.1.0.dev0-py3-none-any.whl",
       "sha256": "6d1c53c390ab1b27af08baf5b7bdd5f35344217c4c9b640067827bddb9b34f13",
-      "bytes": 42986
+      "bytes": 42986,
+      "archive_relative_path": [
+        "artifacts/scran_pooling_py-0.1.0.dev0-py3-none-any.whl"
+      ],
+      "role": "alternative build of same backend; install exactly one backend wheel"
     }
-  ]
+  ],
+  "dependency_count": "one scran backend (two reviewed build variants recorded), plus three distinct dependency wheels"
 }
