@@ -1,0 +1,7 @@
+{
+  "scope": "music_prop.cluster two-level extension after default core",
+  "atol": 1e-08,
+  "rtol": 1e-07,
+  "claims": "12 synthetic cases and two actual data comparisons; no MuSiC2 or ct.cov",
+  "gate_note": "GATES.json is preserved original default-core plan; recursion is a subsequent scoped extension"
+}

@@ -1,0 +1,37 @@
+{
+  "reference_shape": [
+    1097,
+    25453
+  ],
+  "bulk_shape": [
+    32581,
+    89
+  ],
+  "selected_cell_types": [
+    "alpha",
+    "beta",
+    "delta",
+    "gamma",
+    "acinar",
+    "ductal"
+  ],
+  "common_genes": 18325,
+  "python_elapsed_seconds": 1.7173476500001925,
+  "errors": {
+    "proportions": {
+      "max_abs": 1.8568480086855743e-14
+    },
+    "nnls_proportions": {
+      "max_abs": 5.440092820663267e-15
+    },
+    "gene_weights": {
+      "max_abs": 4.2099600250367075e-08
+    },
+    "variance": {
+      "max_abs": 1.583443391597189e-17
+    }
+  },
+  "converged_samples": 89,
+  "verdict": "PASS",
+  "source_sha256": "5c1e9511e167147d249dcc0c0280fcdc1cb3bb671721e5b8049843d7ecb5a1a0"
+}

@@ -1,0 +1,26 @@
+{
+  "analysis.R": "2b4b3ae66cf64d2c0de1fac23cd2f1c9463c3b3947e61c031ab9c66e0edc6137",
+  "construct.R": "99be5a7af680571cb631bcb091f68f0ebe8949447de0321fbe0e0a4b903ee39b",
+  "utils.R": "8d6465e6c3cbb8ad05f4058f45b197de4918219c9a4b67e87a4f5903dc954736",
+  "reference_commit": "f21fe67f5670d5e9fca0ad7550abaae3423eb59c",
+  "oracle": "Unmodified functions sourced with native R nnls and SingleCellExperiment; full MuSiC namespace not installed",
+  "generation": "Synthetic fixture seed 81421; independent official R outputs, no music-py execution",
+  "real_data": {
+    "reference": "E-MTAB-5061 healthy donors",
+    "bulk": "GSE50244",
+    "source_commit": "f21fe67f5670d5e9fca0ad7550abaae3423eb59c",
+    "files": {
+      "EMTABesethealthy.rds": "4e4b0e86f6e5baa3faf430e041760c07f989b918af349f994fa8b44853640468",
+      "GSE50244bulkeset.rds": "f69d2da109da630e0654b736bbe5ddaa1bb834288901d087ffedf9b3165c2db3"
+    }
+  },
+  "recursive_real_data": {
+    "reference": "GSE107585 upstream supplied10,000-cell subset",
+    "bulk": "GSE81492",
+    "files": {
+      "Mousesubeset.rds": "1f5e675b86200ad2ed8004b54cea0f7adf4c2fc2d8f342957a8db9ceef2537c1",
+      "Mousebulkeset.rds": "6eed29cadd514d4bc997abc02db69641cb40019e205b03cb5325ec1804f567c1",
+      "IEmarkers.RData": "685e6309ea6756c158df9a1ff33c4f89282ed8a5733c75ac3fe0478083eed15c"
+    }
+  }
+}

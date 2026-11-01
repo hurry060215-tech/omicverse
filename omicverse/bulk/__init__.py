@@ -109,3 +109,6 @@ __all__ = [
     # Deconvolution
     'Deconvolution',
 ]
+
+from ._music import music_deconvolution, music_deconvolution_recursive
+__all__ += ['music_deconvolution', 'music_deconvolution_recursive']

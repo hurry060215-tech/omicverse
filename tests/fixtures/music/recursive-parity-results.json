@@ -1,0 +1,11 @@
+{
+  "recursive": {
+    "max_abs": 3.3306690738754696e-16
+  },
+  "recursive_zero": {
+    "max_abs": 3.0531133177191805e-16
+  },
+  "recursive_sparse": {
+    "max_abs": 3.3306690738754696e-16
+  }
+}

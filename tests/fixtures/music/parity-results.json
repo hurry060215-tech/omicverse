@@ -1,0 +1,56 @@
+{
+  "balanced": {
+    "proportions": 4.996003610813204e-16,
+    "nnls_proportions": 4.996003610813204e-16,
+    "gene_weights": 2.7853275241795927e-12,
+    "variance": 6.0549620838881626e-21
+  },
+  "missing_donor_type": {
+    "proportions": 7.771561172376096e-16,
+    "nnls_proportions": 5.273559366969494e-16,
+    "gene_weights": 3.9264591578103136e-11,
+    "variance": 2.930733997499879e-19
+  },
+  "marker_subset": {
+    "proportions": 4.85722573273506e-16,
+    "nnls_proportions": 3.608224830031759e-16,
+    "gene_weights": 3.623767952376511e-13,
+    "variance": 1.5087774372967225e-21
+  },
+  "custom_cell_sizes": {
+    "proportions": 4.996003610813204e-16,
+    "nnls_proportions": 4.440892098500626e-16,
+    "gene_weights": 5.5706550483591855e-12,
+    "variance": 1.9322939109238726e-21
+  },
+  "zero_bulk_gene": {
+    "proportions": 6.661338147750939e-16,
+    "nnls_proportions": 4.996003610813204e-16,
+    "gene_weights": 2.5011104298755527e-12,
+    "variance": 2.686682629572234e-21
+  },
+  "permuted_bulk": {
+    "proportions": 5.551115123125783e-16,
+    "nnls_proportions": 4.718447854656915e-16,
+    "gene_weights": 1.8758328224066645e-12,
+    "variance": 2.302870825347629e-21
+  },
+  "zero_in_one_bulk": {
+    "proportions": 4.996003610813204e-16,
+    "nnls_proportions": 4.996003610813204e-16,
+    "gene_weights": 5.286437954055145e-12,
+    "variance": 2.6734477397713854e-21
+  },
+  "sparse_reference": {
+    "proportions": 4.996003610813204e-16,
+    "nnls_proportions": 4.996003610813204e-16,
+    "gene_weights": 2.7853275241795927e-12,
+    "variance": 6.0549620838881626e-21
+  },
+  "maxiter": {
+    "proportions": 4.996003610813204e-16,
+    "nnls_proportions": 4.996003610813204e-16,
+    "gene_weights": 2.7853275241795927e-12,
+    "variance": 6.0549620838881626e-21
+  }
+}
