@@ -1,0 +1,9 @@
+{
+  "signature_max_abs_error": 0.0,
+  "global_classifications_exact": true,
+  "shape": [
+    2262,
+    2000
+  ],
+  "random_seed": 0
+}

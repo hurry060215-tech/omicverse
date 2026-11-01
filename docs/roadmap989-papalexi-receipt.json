@@ -1,0 +1,31 @@
+{
+  "source": "https://exampledata.scverse.org/pertpy/papalexi_2021.h5mu",
+  "sha256": "fc67bd120c20fa8d8c4a5a7ba8a1ae98780e270fdab953d8594676dadb42b97b",
+  "all_rna_cells": 20729,
+  "all_guide_features": 111,
+  "selected_target": "CUL3",
+  "selected_shape": [
+    2262,
+    2000
+  ],
+  "replicate_counts": {
+    "rep1": 886,
+    "rep3": 720,
+    "rep2": 656
+  },
+  "threshold": 10,
+  "training_replicates": [
+    "rep1",
+    "rep2"
+  ],
+  "heldout_replicate": "rep3",
+  "counts_preserved": true,
+  "save_reload_verified": true,
+  "versions": {
+    "pertpy": "1.4.0",
+    "anndata": "0.12.19",
+    "scanpy": "1.12",
+    "numpy": "2.5.4"
+  },
+  "scope": "core computational workflow only; no Systema, calibrated inference or donor generalization"
+}
