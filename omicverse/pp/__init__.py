@@ -142,3 +142,5 @@ __all__ = [
     'binary_search',
     'log1p',
 ]
+from ._scran_pooling import scran_pooling
+__all__ += ['scran_pooling']

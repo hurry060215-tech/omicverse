@@ -1,0 +1,70 @@
+{
+  "status": "root cause confirmed; diagnostic rescue only, NOT production fix",
+  "baseline_changed": false,
+  "production_changed": false,
+  "new_R_run": false,
+  "reference_threshold_changed": false,
+  "reference_atol": 1e-08,
+  "reference_rtol": 0,
+  "first_divergence": {
+    "operation": "pylimma retained-QR ddot",
+    "zero_based_call_index": 32,
+    "inputs_byte_equal": true,
+    "ordinary_pypi": 0.2790912220520218,
+    "qualified_linux": 0.27909122205202186,
+    "difference_ulps": 1
+  },
+  "ordinary_pypi_baseline": {
+    "passed": 113,
+    "total": 116
+  },
+  "candidate_four_way": {
+    "pypi-default": {
+      "passed": 113,
+      "total": 116
+    },
+    "pypi-compat": {
+      "passed": 116,
+      "total": 116
+    },
+    "qualified-default": {
+      "passed": 116,
+      "total": 116
+    },
+    "qualified-compat": {
+      "passed": 116,
+      "total": 116
+    }
+  },
+  "independent_tests": {
+    "independent-ddot-result": {
+      "seed": 20261031,
+      "count": 15000,
+      "failures": 0,
+      "first_failures": [],
+      "claim": "qualified BLAS short contiguous ddot emulation; not R biological evidence or portable whole solver"
+    },
+    "candidate-fma-result": {
+      "cases": 11728,
+      "failures": 0,
+      "first_failures": [],
+      "oracle": "system libm fma, not R"
+    }
+  },
+  "counterchecks": {
+    "sequential_dot_gate": 111,
+    "accurate_fsum_dot_gate": 105,
+    "total": 116
+  },
+  "source_grounding": {
+    "official_source": "https://raw.githubusercontent.com/OpenMathLib/OpenBLAS/v0.3.34/kernel/x86_64/ddot.c",
+    "scope": "dot_compute unit-stride short tail; source does not prescribe compiler FMA contraction. Actual qualified binary disassembly is required for exact rounding profile."
+  },
+  "limitations": [
+    "Compiler-specific arithmetic compatibility, not a more accurate optimizer or universal BLAS fix.",
+    "Diagnostic profile handles short logical float64 vectors length1..15; >=16 remains native BLAS.",
+    "Other BLAS primitives, hardware and longdouble operations remain platform-dependent.",
+    "Frozen116 cases reused; they are not fresh blind or biological validation.",
+    "Candidate is isolated unaccepted source with baseline metadata, not built or installed release."
+  ]
+}
