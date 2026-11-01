@@ -109,3 +109,6 @@ __all__ = [
     # Deconvolution
     'Deconvolution',
 ]
+
+from ._pseudobulk_ds import pseudobulk_ds
+__all__ += ['pseudobulk_ds']
