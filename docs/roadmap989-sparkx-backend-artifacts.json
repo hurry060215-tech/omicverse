@@ -1,0 +1,10 @@
+{
+  "status": "external reviewed local artifacts; NOT distributed or made publicly installable by this adapter PR",
+  "files": [
+    {
+      "filename": "sparkx_py-0.1.0-py3-none-any.whl",
+      "sha256": "90d0abc5f91c391155e2b4b92639575b233221e4b94d195cd24338412cee404c",
+      "bytes": 29565
+    }
+  ]
+}

@@ -748,7 +748,7 @@ def moranI(
 @register_function(
     aliases=["空间变异基因", "svg", "spatially_variable_genes", "空间变异基因检测", "SVG检测"],
     category="space",
-    description="Identify spatially variable genes using PROST, Moran's I, Spateo, SOMDE, or SpatialDE; Pearson-residual HVGs remain as a non-spatial compatibility prefilter",
+    description="Identify spatially variable genes using PROST, Moran's I, Spateo, SOMDE, SpatialDE, or SPARK-X; Pearson-residual HVGs remain as a non-spatial compatibility prefilter",
     prerequisites={
         'optional_functions': []
     },
@@ -773,6 +773,8 @@ def moranI(
         "adata = ov.space.svg(adata, mode='somde', k=20, qval_threshold=0.05, retrain_epoch=100)",
         "# Using SpatialDE (GP-based, direct on single cells)",
         "adata = ov.space.svg(adata, mode='spatialde', qval_threshold=0.05)",
+        "# SPARK-X: explicit counts layer, single-slice input",
+        "adata = ov.space.svg(adata, mode='sparkx', layer='counts', n_jobs=1)",
         "# SpatialDE with custom gene filter and regress formula",
         "adata = ov.space.svg(adata, mode='spatialde', min_total_count=3,",
         "                     regress_formula='np.log(total_counts)')",
@@ -788,7 +790,7 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
     
     This function identifies genes that show significant spatial variation in their
     expression patterns across the tissue. It supports spatial methods including
-    PROST, Moran's I, Spateo, SOMDE, and SpatialDE. A clearly marked
+    PROST, Moran's I, Spateo, SOMDE, SpatialDE, and SPARK-X. A clearly marked
     Pearson-residual non-spatial prefilter is retained for compatibility.
 
     Parameters
@@ -796,13 +798,13 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
     adata : AnnData
         Spatial AnnData containing expression matrix and coordinates in
         ``adata.obsm['spatial']``.
-    mode : {'prost', 'moran', 'spateo', 'somde', 'spatialde', 'pearson_residuals'}, default='prost'
+    mode : {'prost', 'moran', 'spateo', 'somde', 'spatialde', 'sparkx', 'pearson_residuals'}, default='prost'
         SVG detection backend. ``'pearson_residuals'`` is retained as a
         non-spatial HVG prefilter for compatibility; it does not use coordinates
         and must not be interpreted as an SVG significance test. The legacy
         spelling ``'pearsonr'`` is an alias for that prefilter.
     selection : {'significant', 'top_n'}, default='significant'
-        For Moran, SOMDE and SpatialDE, select significant genes before applying
+        For Moran, SOMDE, SpatialDE and SPARK-X, select significant genes before applying
         the count cap. Use top_n explicitly for the legacy ranked prefilter.
         Multiple libraries retain separate backend tests, q-values and selections;
         the global mask is the union of their selected candidates.
@@ -819,12 +821,20 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
         Observation column identifying independent slides for Moran, SOMDE or
         SpatialDE. Each slide is tested separately, so overlapping coordinate
         systems cannot create cross-slide edges or pooled tests.
+        SPARK-X currently accepts only a single library per call and rejects
+        multiple labels or multiple entries in ``adata.uns['spatial']``.
     **kwargs
         Additional method-specific options.
         For ``somde``: ``k``, ``qval_threshold``, ``retrain_epoch``.
         For ``spatialde``: ``qval_threshold``, ``min_total_count``, ``regress_formula``,
         ``n_jobs``, ``kernel_space``, ``approx_rank``, ``approx_seed``, ``approx_models``,
         ``show_progress``.
+        For ``sparkx``: ``layer`` (None selects X; use 'counts' explicitly),
+        ``spatial_key`` (default 'spatial'), ``option`` ('mixture' or 'single'),
+        ``n_jobs`` (default 1), ``verbose``, ``qval_threshold`` (default 0.05),
+        and ``covariates``. Covariates may be obs column names, a numeric
+        DataFrame whose index exactly equals obs_names, or a numeric 2-D array
+        already in observation order. No intercept is added automatically.
 
     Returns
     -------
@@ -864,8 +874,19 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
         - SpatialDE stores ``adata.var['spatialde_LLR']``, ``spatialde_pval``, ``spatialde_qval``,
           ``spatialde_FSV``, ``spatialde_l``
         - SpatialDE requires ``patsy`` and ``tqdm``
-        - Mitochondrial genes are excluded by default
-        - Results are normalized and log-transformed
+        - SPARK-X uses the supplied expression matrix directly, without
+          normalization, log transformation, mitochondrial filtering or a
+          whole-matrix dense conversion. It requires the optional sparkx-py
+          backend (install the local py-SPARK-X package). It preserves native
+          BY-adjusted q-values and selects q < qval_threshold by default.
+          Explicit selection='top_n' ranks all finite results by q, p, then
+          original gene position. Both selection modes respect n_svgs.
+        - SPARK-X writes sparkx_pval/sparkx_qval in var, sparkx_stats and
+          sparkx_pvals in varm (genes by named kernels), and run provenance in
+          uns['space_svg_runs']['sparkx']. Filtered genes remain present with
+          NaN results. X, layers and observation/gene ordering are unchanged.
+          Reference limitations are preserved: fewer than two retained genes
+          or spots, singular covariates and degenerate coordinates raise errors.
 
     Examples:
         >>> import scanpy as sc
@@ -894,6 +915,12 @@ def svg(adata,mode='prost',n_svgs=3000,target_sum=50*1e4,platform="visium",
         raise ValueError('qval_threshold must lie in [0, 1].')
     if selection not in ('significant', 'top_n'):
         raise ValueError("selection must be 'significant' or 'top_n'.")
+    if mode == 'sparkx':
+        from ._sparkx import _sparkx_svg
+        result = _sparkx_svg(adata, n_svgs=n_svgs, selection=selection,
+                             library_key=library_key, **kwargs)
+        add_reference(result, 'SPARK-X', 'spatial variable gene selection with SPARK-X')
+        return result
     if library_key is not None:
         if library_key not in adata.obs or adata.obs[library_key].isna().any():
             raise ValueError('library_key must exist without missing labels.')
