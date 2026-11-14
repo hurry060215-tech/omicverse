@@ -1,26 +1,43 @@
 # Roadmap #989 standalone adapters
 
-Algorithms live in independent packages. OmicVerse imports each backend only when called. These are review-stage source installs, not published PyPI releases. Base OmicVerse does not require these backends.
+Algorithms live in independent packages. OmicVerse imports each backend only when called. Four distributions are released; two maintenance variants remain candidates. Base OmicVerse does not require these backends.
 
-## Pinned installation
+## Pinned installation and candidate status
 
-Use a separate analysis environment with these tested revisions:
+The first four distributions are released on PyPI. The last two are independent
+maintenance variants on release branches, **not yet published**. This integration
+branch is preparatory; do not promote its six-package extra before both releases
+and actual PyPI installation validation are complete.
 
-    python -m pip install "git+https://github.com/omicverse/py-RUVSeq.git@9efdf826a5fb637253c08a743610b4401e1d7da6"
-    python -m pip install "git+https://github.com/omicverse/py-SPARKX.git@fe490febbaf28e2c9a4eecd6cd0005303a979020"
-    python -m pip install "git+https://github.com/omicverse/py-MuSiC.git@b23fcba0d35ef42c592420f243dd6bfb78050d1d"
-    python -m pip install "git+https://github.com/omicverse/py-muscat.git@7b9c1a8394b1aa99203b5474f9f2f9ab1d1dba79"
-    python -m pip install "git+https://github.com/hurry060215-tech/scranPY.git@17b6aeabd02fa6ceae8e4f5e3838a10276337b29"
-    python -m pip install "git+https://github.com/hurry060215-tech/pyNebulosa.git@3f2678cb7b0825e669608e8734d894f6598efd86"
+| Import module | Distribution/version | Status |
+|---|---|---|
+| pyruvseq | py-ruvseq-omicverse==0.1.0 | Published |
+| pysparkx | py-sparkx-omicverse==0.1.0 | Published |
+| pymusic_deconv | py-music-omicverse==0.1.0 | Published |
+| pymuscat | py-muscat-omicverse==0.1.0 | Published |
+| ov_scranpool | py-scranpool-omicverse==0.1.0 | Candidate |
+| ov_nebulosa | py-nebulosa-omicverse==0.1.0 | Candidate |
+
+Install the released packages with normal pip commands. For local acceptance of
+the two candidates, build each release branch with `python -m build` and install
+the resulting wheel path. Do not replace them with PyPI `scranpy` (libscran's
+different implementation) or `pynebulosa==0.1.1` (missing the required patches).
+The `roadmap-ports` extra records all six exact candidate/release pins; it becomes
+usable from PyPI only when the last two are published.
 
 | Backend | Public API |
 |---|---|
-| omicverse/py-RUVSeq | ov.bulk.ruvg / ruvr / ruvs |
-| omicverse/py-SPARKX | ov.space.sparkx |
-| omicverse/py-MuSiC | ov.bulk.music_basis / music_prop |
-| omicverse/py-muscat | ov.single.muscat_aggregate / muscat_pb_ds |
-| hurry060215-tech/scranPY | ov.pp.scran_pooling |
-| hurry060215-tech/pyNebulosa | ov.pl.nebulosa_density |
+| py-ruvseq-omicverse | ov.bulk.ruvg / ruvr / ruvs |
+| py-sparkx-omicverse | ov.space.sparkx |
+| py-music-omicverse | ov.bulk.music_basis / music_prop |
+| py-muscat-omicverse | ov.single.muscat_aggregate / muscat_pb_ds |
+| py-scranpool-omicverse | ov.pp.scran_pooling |
+| py-nebulosa-omicverse | ov.pl.nebulosa_density |
+
+The latter two keep distinct Python namespaces so upstream installations can
+coexist. They are maintained in `hurry060215-tech/scranPY` and
+`hurry060215-tech/pyNebulosa` on separate release branches; the original small
+upstream bug-fix PRs remain unchanged. Original authorship and licenses are retained.
 
 ## Scope
 

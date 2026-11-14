@@ -7,6 +7,20 @@ import pytest
 from scipy import sparse
 from omicverse import _roadmap_ports as ports
 
+
+@pytest.mark.parametrize('module,distribution', ports._BACKEND_DISTRIBUTIONS.items())
+def test_missing_backend_names_the_distribution(monkeypatch, module, distribution):
+    from omicverse import _optional
+
+    def missing(name, **kwargs):
+        assert name == module
+        raise ModuleNotFoundError(f"No module named '{name}'", name=name)
+
+    monkeypatch.setattr(_optional.importlib, 'import_module', missing)
+    with pytest.raises(ImportError) as error:
+        ports._backend(module)
+    assert f'python -m pip install "{distribution}"' in str(error.value)
+
 def test_ruv_arguments_are_forwarded(monkeypatch):
     received={}
     def call(*args,**kwargs):received.update(kwargs);return 'result'
@@ -38,7 +52,10 @@ def test_scrans_restricted_path_and_no_mutation(monkeypatch):
         assert not kwargs['parallelize'] and not kwargs['plotting']
         work.obs['size_factors']=np.ones(240)
         work.X[:]=99
-    monkeypatch.setattr(ports,'_backend',lambda name:SimpleNamespace(compute_sum_factors=call))
+    def backend(name):
+        assert name == 'ov_scranpool'
+        return SimpleNamespace(compute_sum_factors=call)
+    monkeypatch.setattr(ports,'_backend',backend)
     out=ports.scran_pooling(a,cluster_key='cluster')
     np.testing.assert_array_equal(out,1)
     np.testing.assert_array_equal(a.X,1)
@@ -50,7 +67,10 @@ def test_nebulosa_requires_explicit_bandwidth(monkeypatch):
     def call(w,x,**kwargs):
         assert kwargs['bandwidth']==(.3,.4) and kwargs['method']=='wkde'
         return np.ones(len(w))
-    monkeypatch.setattr(ports,'_backend',lambda name:SimpleNamespace(calculate_density=call))
+    def backend(name):
+        assert name == 'ov_nebulosa'
+        return SimpleNamespace(calculate_density=call)
+    monkeypatch.setattr(ports,'_backend',backend)
     np.testing.assert_array_equal(ports.nebulosa_density([1,2],[[0,0],[1,1]],bandwidth=(.3,.4)),1)
     with pytest.raises(TypeError):ports.nebulosa_density([1,2],[[0,0],[1,1]])
 

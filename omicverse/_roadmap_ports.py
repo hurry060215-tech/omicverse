@@ -6,9 +6,23 @@ from ._optional import import_optional_module
 from ._registry import register_function
 
 
+_BACKEND_DISTRIBUTIONS = {
+    'pyruvseq': 'py-ruvseq-omicverse==0.1.0',
+    'pysparkx': 'py-sparkx-omicverse==0.1.0',
+    'pymusic_deconv': 'py-music-omicverse==0.1.0',
+    'pymuscat': 'py-muscat-omicverse==0.1.0',
+    'ov_scranpool': 'py-scranpool-omicverse==0.1.0',
+    'ov_nebulosa': 'py-nebulosa-omicverse==0.1.0',
+}
+
+
 def _backend(module):
-    return import_optional_module(module,feature='Roadmap #989 analysis',dependencies=(module,),
-        install_hint='Install the pinned standalone backend described in docs/roadmap989-ports.md.')
+    distribution = _BACKEND_DISTRIBUTIONS[module]
+    return import_optional_module(
+        module, feature='Roadmap #989 analysis', dependencies=(module,),
+        install_hint=f'Install the tested backend with `python -m pip install "{distribution}"`. '
+                     'For unreleased candidates, use the wheel instructions in docs/roadmap989-ports.md.',
+    )
 
 
 @register_function(aliases=['RUVg'],category='bulk',description='Estimate unwanted factors from control genes')
@@ -98,7 +112,7 @@ def scran_pooling(adata,*,layer='counts',cluster_key=None,min_mean=.1):
         sizes=labels.value_counts().loc[lambda s:s>0]
     if min(sizes)<101:raise ValueError('The validated scranPY subset requires >=101 cells per cluster.')
     work=adata.copy();work.X=np.array(x,copy=True)
-    _backend('scranPY').compute_sum_factors(work,clusters=cluster_key,parallelize=False,
+    _backend('ov_scranpool').compute_sum_factors(work,clusters=cluster_key,parallelize=False,
         algorithm='QR',max_size=None,min_mean=min_mean,plotting=False,stopwatch=False)
     factors=work.obs['size_factors'].copy()
     if not np.isfinite(factors).all() or (factors<=0).any():raise RuntimeError('Invalid pooling size factors.')
@@ -117,4 +131,4 @@ def nebulosa_density(weights,coordinates,*,bandwidth,adjust=1.):
     if not np.isfinite(adjust) or adjust<=0:raise ValueError('adjust must be finite and positive.')
     if weights.ndim!=1 or coordinates.shape!=(len(weights),2) or not np.isfinite(weights).all() or np.any(weights<0):
         raise ValueError('Supply a nonnegative weight per cell and an n x 2 coordinate matrix.')
-    return _backend('pynebulosa').calculate_density(weights,coordinates,method='wkde',bandwidth=bandwidth,adjust=adjust)
+    return _backend('ov_nebulosa').calculate_density(weights,coordinates,method='wkde',bandwidth=bandwidth,adjust=adjust)
